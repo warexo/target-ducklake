@@ -1,0 +1,423 @@
+"""DuckLake connector for managing database connections."""
+
+from __future__ import annotations
+
+import duckdb
+import logging
+from typing import Any, Dict, Sequence
+import math
+
+from singer_sdk.connectors.sql import JSONSchemaToSQL
+from sqlalchemy.types import JSON, BIGINT, INTEGER
+
+logger = logging.getLogger(__name__)
+
+PARTITION_GRANULARITIES = ["year", "month", "day", "hour"]
+
+
+class DuckLakeConnectorError(Exception):
+    """Custom exception for DuckLake connector errors."""
+
+    pass
+
+
+class JSONSchemaToDuckLake(JSONSchemaToSQL):
+    """Convert JSON Schema types to DuckLake compatible types."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Override the default type handler for object and array types
+        self.register_type_handler("object", JSON)
+        self.register_type_handler("array", JSON)
+        # Override the default type handler for integer type
+        self.register_type_handler("integer", self._handle_integer_type)
+
+    def _handle_integer_type(self, jsonschema: dict) -> INTEGER | BIGINT:
+        """Handle integer type."""
+        minimum = jsonschema.get("minimum", -math.inf)
+        maximum = jsonschema.get("maximum", math.inf)
+        if minimum >= -(2**31) and maximum < 2**31:
+            return INTEGER()
+        return BIGINT()
+
+
+class DuckLakeConnector:
+    """Handles DuckLake database connections and setup."""
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the DuckLake connector with configuration.
+
+        Args:
+            config: Configuration dictionary containing connection parameters
+
+        Raises:
+            DuckLakeConnectorError: If required configuration is missing
+        """
+        self.config = config
+        self._validate_config()
+
+        self.catalog_url = config.get("catalog_url")
+        self.data_path = config.get("data_path")
+        self.storage_type = config.get("storage_type")
+        self.public_key = config.get("public_key")
+        self.secret_key = config.get("secret_key")
+        self.region = config.get("region")
+
+        self._connection: duckdb.DuckDBPyConnection | None = None
+        self.catalog_name = "ducklake_catalog"
+
+    def _validate_config(self) -> None:
+        """Validate required configuration parameters."""
+        required_params = ["catalog_url", "data_path"]
+        missing_params = [
+            param for param in required_params if not self.config.get(param)
+        ]
+
+        if missing_params:
+            raise DuckLakeConnectorError(
+                f"Missing required configuration parameters: {', '.join(missing_params)}"
+            )
+
+        # Validate cloud storage configuration
+        storage_type = self.config.get("storage_type")
+        if storage_type in ["GCS", "S3"]:
+            has_public_key = bool(self.config.get("public_key"))
+            has_secret_key = bool(self.config.get("secret_key"))
+
+            if has_public_key != has_secret_key:
+                # One is set but not the other
+                missing_key = "secret_key" if has_public_key else "public_key"
+                raise DuckLakeConnectorError(
+                    f"Storage type is {storage_type} and {('public_key' if has_public_key else 'secret_key')} "
+                    f"is provided, but {missing_key} is missing. Both must be provided together."
+                )
+
+            if not has_public_key and not has_secret_key:
+                logger.info(
+                    f"Storage type is {storage_type} but no authentication credentials provided. "
+                    f"This will work for public storage or if using instance/environment credentials "
+                    f"(e.g., IAM roles, service accounts)."
+                )
+
+            # For S3 with explicit credentials, region is required
+            if (
+                storage_type == "S3"
+                and has_public_key
+                and not self.config.get("region")
+            ):
+                raise DuckLakeConnectorError(
+                    "Storage type is S3 with explicit credentials, but region is missing. "
+                    "Region is required for S3 authentication."
+                )
+
+    @property
+    def connection(self) -> duckdb.DuckDBPyConnection:
+        """Get or create the DuckDB connection."""
+        if self._connection is None:
+            self._connection = self._create_connection()
+        return self._connection
+
+    def _create_connection(self) -> duckdb.DuckDBPyConnection:
+        """Create and configure a new DuckDB connection."""
+        try:
+            logger.info("Creating DuckDB connection")
+            conn = duckdb.connect(database=":memory:")
+
+            # Execute startup script to configure DuckLake
+            startup_script = self._build_startup_script()
+            # logger.info(f"Executing startup script: {startup_script}")
+            conn.execute(startup_script)
+
+            return conn
+        except Exception as e:
+            raise DuckLakeConnectorError(
+                f"Failed to create DuckDB connection: {e}"
+            ) from e
+
+    def _build_startup_script(self) -> str:
+        """Build the DuckDB startup script with extensions and attachments."""
+        script_parts = [
+            "INSTALL ducklake;",
+            "INSTALL postgres;",
+            f"ATTACH 'ducklake:postgres:{self.catalog_url}' AS {self.catalog_name} (DATA_PATH '{self.data_path}');",
+        ]
+
+        # Add secrets for cloud storage if configured
+        if self.public_key and self.secret_key:
+            if self.storage_type == "GCS":
+                script_parts.append(
+                    f"CREATE SECRET ("
+                    f"TYPE gcs, "
+                    f"KEY_ID '{self.public_key}', "
+                    f"SECRET '{self.secret_key}'"
+                    ");"
+                )
+            elif self.storage_type == "S3":
+                # For S3, region is required when using explicit credentials
+                secret_parts = [
+                    f"TYPE s3, " f"KEY_ID '{self.public_key}'",
+                    f"SECRET '{self.secret_key}'",
+                    f"REGION '{self.region}'",  # Always include since we validate it's required
+                ]
+
+                script_parts.append(f"CREATE SECRET (" + ", ".join(secret_parts) + ");")
+        elif self.storage_type in ["GCS", "S3"]:
+            # Log info when cloud storage is configured but no auth is provided
+            logger.info(
+                f"Storage type is {self.storage_type} but no authentication credentials provided. "
+                f"Will attempt to access storage without explicit authentication. "
+                f"This will only work for public buckets or if using instance/environment credentials."
+            )
+
+        return "\n".join(script_parts)
+
+    def execute(self, query: str, parameters: Any = None) -> Any:
+        """Execute a query on the DuckDB connection.
+
+        Args:
+            query: SQL query to execute
+            parameters: Optional parameters for the query
+
+        Returns:
+            Query result
+
+        Raises:
+            DuckLakeConnectorError: If query execution fails
+        """
+        try:
+            logger.debug(f"Executing query: {query}")
+            return self.connection.execute(query, parameters)
+        except Exception as e:
+            raise DuckLakeConnectorError(f"Query execution failed: {e}") from e
+
+    def prepare_target_schema(self, target_schema_name: str) -> None:
+        """Prepare the schema for the target table."""
+        create_schema_query = (
+            f"CREATE SCHEMA IF NOT EXISTS {self.catalog_name}.{target_schema_name};"
+        )
+        logger.info(
+            f"Preparing schema {target_schema_name} in catalog {self.catalog_name} with query {create_schema_query}"
+        )
+        self.execute(create_schema_query)
+
+    def _check_if_table_exists(self, target_schema_name: str, table_name: str) -> bool:
+        """Check if the table exists in the target schema."""
+        check_table_query = f"""
+        SELECT
+            COUNT(*) AS cnt
+        FROM information_schema.tables
+            WHERE table_schema = '{target_schema_name}'
+            AND table_name   = '{table_name}';
+        """
+        result = self.execute(check_table_query)
+        return result.fetchone()[0] > 0
+
+    def _get_table_columns(self, target_schema_name: str, table_name: str) -> list[str]:
+        """Get the columns of the table."""
+        get_columns_query = f"PRAGMA TABLE_INFO('{self.catalog_name}.{target_schema_name}.{table_name}');"
+        result = self.execute(get_columns_query).fetchall()
+        return [col[1] for col in result]
+
+    def _add_columns(
+        self,
+        target_schema_name: str,
+        table_name: str,
+        columns: list[dict[str, str]],
+    ) -> None:
+        """Add columns to the table one by one."""
+        for col in columns:
+            add_column_query = f"ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} ADD COLUMN {col['name']} {col['type']};"
+            logger.info(
+                f"Adding column {col['name']} ({col['type']}) to table {table_name}"
+            )
+            self.execute(add_column_query)
+
+    def _create_empty_table(
+        self,
+        target_schema_name: str,
+        table_name: str,
+        columns: list[dict[str, str]],
+    ) -> None:
+        """Create an empty table in the target schema."""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.catalog_name}.{target_schema_name}.{table_name} (
+            {', '.join([f'{col["name"]} {col["type"]}' for col in columns])}
+        );
+        """
+        logger.info(
+            f"Creating table {table_name} in schema {target_schema_name} with query {create_table_query}"
+        )
+        self.execute(create_table_query)
+
+    def prepare_table(
+        self,
+        target_schema_name: str,
+        table_name: str,
+        columns: list[dict[str, str]],
+        partition_fields: list[dict[str, str]] | None = None,
+    ) -> list[str]:
+        """
+        Prepare the table for the target schema.
+        If the table doesn't exist, create it.
+        Add missing columns to existing table if necessary.
+        Returns all columns in the table and order in which they appear.
+        """
+        if not self._check_if_table_exists(target_schema_name, table_name):
+            self._create_empty_table(target_schema_name, table_name, columns)
+        else:
+            logger.info(
+                f"Table {table_name} already exists in schema {target_schema_name}. Checking if columns match..."
+            )
+            # get the columns of the existing table
+            existing_columns = self._get_table_columns(target_schema_name, table_name)
+            new_columns = [
+                col for col in columns if col["name"] not in existing_columns
+            ]
+            if new_columns:
+                logger.info(f"Adding new columns to table {table_name}: {new_columns}")
+                self._add_columns(target_schema_name, table_name, new_columns)
+
+        # Add partition fields if any
+        if partition_fields:
+            logger.info(
+                f"Adding partition fields to table {table_name}: {partition_fields}"
+            )
+            self._add_partition_fields(target_schema_name, table_name, partition_fields)
+
+        return self._get_table_columns(target_schema_name, table_name)
+
+    def _add_partition_fields(
+        self,
+        target_schema_name: str,
+        table_name: str,
+        partition_fields: list[dict[str, str]],
+    ) -> None:
+        """Add partition fields to the table."""
+        partitions_sql = ""
+        for partition_field in partition_fields:
+            column_type = partition_field["type"]
+            if column_type == "identifier":
+                partitions_sql += f"{partition_field['column_name']}, "
+            elif column_type == "timestamp":
+                for granularity in partition_field["granularity"]:
+                    if granularity not in PARTITION_GRANULARITIES:
+                        raise DuckLakeConnectorError(
+                            f"Unsupported granularity: {granularity}"
+                        )
+                    partitions_sql += (
+                        f"{granularity}({partition_field['column_name']}), "
+                    )
+            else:
+                raise DuckLakeConnectorError(
+                    f"Unsupported partition type: {column_type}"
+                )
+        partitions_sql = partitions_sql[:-2]
+        add_partition_query = f"ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} SET PARTITIONED BY ({partitions_sql});"
+        logger.info(
+            f"Adding partition fields to table {table_name} with query {add_partition_query}"
+        )
+        self.execute(add_partition_query)
+
+    def _build_columns_sql(
+        self,
+        file_columns: list[str],
+        target_table_columns: list[str],
+    ) -> str:
+        """
+        Build SQL column list for SELECT statement used for INSERT and MERGE.
+        Orders columns by which they appear in the target table.
+        If a column is not found in the file, it is replaced with NULL.
+        """
+        columns_sql = ""
+        for col in target_table_columns:
+            if col not in file_columns:
+                logger.warning(f"Column {col} not found in source, using NULL")
+                columns_sql += "NULL, "
+            else:
+                columns_sql += f"{col}, "
+        # Remove trailing comma and space
+        return columns_sql[:-2]
+
+    def insert_into_table(
+        self,
+        file_location: str,
+        target_schema_name: str,
+        table_name: str,
+        file_columns: list[str],
+        target_table_columns: list[str],
+    ):
+        """
+        Insert data from a parquet file into the table.
+        Orders columns by which they appear in the target table.
+        If a column is not found in the file, it is inserted as NULL.
+        """
+        columns_sql = self._build_columns_sql(file_columns, target_table_columns)
+        insert_sql = f"INSERT INTO {self.catalog_name}.{target_schema_name}.{table_name} SELECT {columns_sql} FROM '{file_location}';"
+        logger.info(f"Inserting into table {table_name} with SQL {insert_sql}")
+        self.execute(insert_sql)
+
+    def merge_into_table(
+        self,
+        file_location: str,
+        target_schema_name: str,
+        table_name: str,
+        file_columns: list[str],
+        target_table_columns: list[str],
+        key_properties: Sequence[str],
+    ):
+        """
+        DuckLake doesn't support MERGE natively, so we need to use a workaround
+        We first delete rows in the target table that are also in the parquet file (based on key_property)
+        Then we insert the new data
+        """
+        if len(key_properties) > 1:
+            raise DuckLakeConnectorError("Only one key property is supported for MERGE")
+
+        key_property = key_properties[0]
+        columns_sql = self._build_columns_sql(file_columns, target_table_columns)
+
+        # Combine all statements in one execute call with explicit transaction
+        # Rollsback if any statement fails, avoids partial updates/deletes
+        combined_sql = f"""
+        BEGIN TRANSACTION;
+        DELETE FROM {self.catalog_name}.{target_schema_name}.{table_name} 
+        WHERE {key_property} IN (SELECT {key_property} FROM '{file_location}');
+        INSERT INTO {self.catalog_name}.{target_schema_name}.{table_name} 
+        SELECT {columns_sql} FROM '{file_location}';
+        COMMIT;
+        """
+
+        logger.info(f"Executing atomic merge operation on table {table_name}")
+        logger.info(f"Merge SQL: {combined_sql}")
+
+        # Once MERGE is supported, we can use it instead of this workaround
+        # SEE: https://github.com/duckdb/ducklake/issues/66#issuecomment-2917089352
+        self.execute(combined_sql)
+
+    def json_to_ducklake_schema(self, schema: dict) -> list[dict[str, str]]:
+        """
+        Convert a JSON schema to an array of dictionaries with column name and type.
+        Example Output: [{'name': 'id', 'type': 'INTEGER'}, {'name': 'name', 'type': 'STRING'}]
+        """
+        ducklake_schema = []
+        converter = JSONSchemaToDuckLake()
+        for prop_name, prop_schema in schema.items():
+            ducklake_schema.append(
+                {"name": prop_name, "type": str(converter.to_sql_type(prop_schema))}
+            )
+        return ducklake_schema
+
+    def close(self) -> None:
+        """Close the database connection."""
+        if self._connection is not None:
+            logger.info("Closing DuckDB connection")
+            self._connection.close()
+            self._connection = None
+
+    def __enter__(self) -> "DuckLakeConnector":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit."""
+        self.close()
