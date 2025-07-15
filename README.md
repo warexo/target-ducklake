@@ -1,12 +1,10 @@
 # target-ducklake
 
-`target-ducklake` is a Singer target for ducklake. This target is in development and may not be stable.
+`target-ducklake` is a Singer target for ducklake. This target is in development and may not be stable. I built this with GCS in mind, but it should work with S3 and local storage, though this has not been tested extensively.
 
-Currently only supports append and merging data. If no key properties are provided, data is appended. If key properties are provided, data is automatically merged.
+Currently only supports append and merging data. If no key properties are provided, data is appended. If key properties are provided, data is automatically merged. TODO: support merging when stream has multiple key properties (currently only supports one key property).
 
 ## Configuration
-
-
 
 ### Accepted Config Options
 
@@ -26,6 +24,29 @@ Currently only supports append and merging data. If no key properties are provid
 | `max_batch_size` | integer | ❌ | `10000` | Maximum number of records to process in a single batch |
 | `partition_fields` | object | ❌ | - | Object mapping stream names to arrays of partition column definitions. Each stream key maps directly to an array of column definitions |
 | `auto_cast_timestamps` | boolean | ❌ | `false` | When True, automatically attempts to cast timestamp-like fields to timestamp types in ducklake |
+
+### Example Meltano YAML Configuration
+
+```yaml
+plugins:
+    # ... other plugins ...
+    loaders:
+    - name: target-ducklake
+      namespace: target_ducklake
+      pip_url: https://github.com/definite-app/target-ducklake.git
+      config:
+        catalog_url: postgres://test:test@localhost:5432/test_db
+        data_path: gs://test-bucket/test-path
+        storage_type: GCS # Optional (default local)
+        public_key: GOOG1234567890 # Optional (required for private GCS and S3 storage)
+        secret_key: GOOG1234567890 # Optional (required for private GCS and S3 storage)
+        default_target_schema: my_schema # Optional (default None)
+        target_schema_prefix: my_prefix # Optional
+        max_batch_size: 10000 # Optional (default 10000)
+        add_record_metadata: true # Optional
+        auto_cast_timestamps: true # Optional
+        partition_fields: {"my_stream": [{"column_name": "created_at", "type": "timestamp", "granularity": ["year", "month"]}]} # Optional
+```
 
 ### Partitioning
 
