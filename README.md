@@ -2,7 +2,12 @@
 
 `target-ducklake` is a Singer target for ducklake. This target is in development and may not be stable. I built this with GCS in mind, but it should work with S3 and local storage, though this has not been tested extensively.
 
-Currently only supports append and merging data. If no key properties are provided, data is appended. If key properties are provided, data is automatically merged. TODO: support merging when stream has multiple key properties (currently only supports one key property).
+Currently only supports append and merging data. If no key properties are provided, data is appended. If key properties are provided, data is automatically merged. 
+
+## TODOs
+
+- support merging when stream has multiple key properties (currently only supports one key property)
+- support deleting data from the target or setting _sdc_deleted_at field (example use-case: syncing from Postgres using log-based change data capture)
 
 ## Configuration
 
