@@ -89,6 +89,7 @@ class ducklakeSink(BatchSink):
             return self.config.get("default_target_schema")  # type: ignore
         else:
             # if no default target schema is provided, try to derive it from the stream name
+            # only works for database extractors (eg public-users becomes public.users)
             stream_name_dict = stream_name_to_dict(self.stream_name)
             if stream_name_dict.get("schema_name"):
                 if self.config.get("target_schema_prefix"):
