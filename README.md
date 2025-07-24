@@ -21,7 +21,7 @@ Currently only supports append and merging data. If no key properties are provid
 | `public_key` | string | ❌ | - | Public key for private GCS and S3 storage authentication (optional) |
 | `secret_key` | string | ❌ | - | Secret key for private GCS and S3 storage authentication (optional) |
 | `region` | string | ❌ | - | AWS region for S3 storage type (required when using S3 with explicit credentials) |
-| `default_target_schema` | string | ❌ | - | Default database schema where data should be written. If not provided schema will attempt to be derived from the stream name |
+| `default_target_schema` | string | ❌ | - | Default database schema where data should be written. If not provided schema will attempt to be inferred from the stream name (inferring schema only works for database extractors ) |
 | `target_schema_prefix` | string | ❌ | - | Prefix to add to the target schema name. If not provided, no prefix will be added |
 | `add_record_metadata` | boolean | ❌ | `false` | When True, automatically adds Singer Data Capture (SDC) metadata columns to target tables |
 | `flatten_max_level` | integer | ❌ | `0` | Maximum depth for flattening nested fields. Set to 0 to disable flattening |
