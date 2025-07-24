@@ -1,6 +1,8 @@
 """ducklake target class."""
 
 from __future__ import annotations
+import logging
+import json
 
 from singer_sdk import typing as th
 from singer_sdk.target_base import Target
@@ -14,6 +16,25 @@ class Targetducklake(Target):
     """Sample target for ducklake."""
 
     name = "target-ducklake"
+    
+    @property
+    def config(self):
+        """Get config dict with JSON string parsing for complex types."""
+        config = dict(super().config)
+        
+        # Parse partition_fields if it's a JSON string (required if passed in via env vars)
+        if "partition_fields" in config and isinstance(config["partition_fields"], str):
+            partition_fields_str = config["partition_fields"]
+            logging.info(f"Parsing partition_fields JSON string: {partition_fields_str}")
+            try:
+                parsed_partition_fields = json.loads(partition_fields_str)
+                config["partition_fields"] = parsed_partition_fields
+                logging.info(f"Successfully parsed partition_fields: {parsed_partition_fields}")
+            except (json.JSONDecodeError, ValueError) as e:
+                logging.error(f"Failed to parse partition_fields JSON '{partition_fields_str}': {e}")
+                config["partition_fields"] = None
+                
+        return config
 
     config_jsonschema = th.PropertiesList(
         th.Property(
@@ -111,34 +132,49 @@ class Targetducklake(Target):
         ),
         th.Property(
             "partition_fields",
-            th.ObjectType(
-                additional_properties=th.ArrayType(
-                    th.ObjectType(
-                        th.Property("column_name", th.StringType(nullable=False)),
-                        th.Property(
-                            "type",
-                            th.StringType(
-                                allowed_values=["timestamp", "identifier"],
-                                nullable=False,
-                            ),
-                        ),
-                        th.Property(
-                            "granularity",
-                            th.ArrayType(
-                                th.StringType(
-                                    allowed_values=["year", "month", "day", "hour"]
-                                )
-                            ),
-                            nullable=True,
-                        ),
-                    )
-                )
-            ),
+            th.CustomType({
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "description": "JSON string representation of partition fields object"
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column_name": {
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["timestamp", "identifier"]
+                                    },
+                                    "granularity": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "enum": ["year", "month", "day", "hour"]
+                                        }
+                                    }
+                                },
+                                "required": ["column_name", "type"]
+                            }
+                        }
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            }),
             nullable=True,
             title="Partition Fields",
             description=(
                 "Object mapping stream names to arrays of partition column definitions. "
-                "Each stream key maps directly to an array of column definitions."
+                "Each stream key maps directly to an array of column definitions. "
+                "Can be provided as a JSON string or object."
             ),
         ),
         th.Property(
