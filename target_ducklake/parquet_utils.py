@@ -1,6 +1,5 @@
 # taken from https://github.com/Automattic/target-parquet/blob/master/target_parquet/utils/parquet.py
 import logging
-import re
 
 import pyarrow as pa
 import pyarrow.parquet as pq

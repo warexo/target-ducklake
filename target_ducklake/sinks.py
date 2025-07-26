@@ -1,24 +1,24 @@
 """ducklake target sink class, which handles writing streams."""
 
 from __future__ import annotations
-from datetime import datetime, timezone
-from decimal import Decimal
-import logging
+
 import os
 import shutil
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from decimal import Decimal
+
+import pyarrow.parquet as pq
+from singer_sdk import Target
 
 # from singer_sdk.connectors import SQLConnector
 from singer_sdk.sinks import BatchSink
 
-from target_ducklake.flatten import flatten_schema, flatten_record
-from singer_sdk import Target
-import pyarrow.parquet as pq
-
 from target_ducklake.connector import DuckLakeConnector
+from target_ducklake.flatten import flatten_record, flatten_schema
 from target_ducklake.parquet_utils import (
-    flatten_schema_to_pyarrow_schema,
     concat_tables,
+    flatten_schema_to_pyarrow_schema,
 )
 
 
@@ -43,7 +43,9 @@ class ducklakeSink(BatchSink):
         self.flatten_max_level = self.config.get("flatten_max_level", 0)
         self.auto_cast_timestamps = self.config.get("auto_cast_timestamps", False)
         self.flatten_schema = flatten_schema(
-            self.schema, max_level=self.flatten_max_level, auto_cast_timestamps=self.auto_cast_timestamps
+            self.schema,
+            max_level=self.flatten_max_level,
+            auto_cast_timestamps=self.auto_cast_timestamps,
         )
         self.pyarrow_schema = flatten_schema_to_pyarrow_schema(self.flatten_schema)
         self.ducklake_schema = self.connector.json_to_ducklake_schema(
@@ -87,23 +89,21 @@ class ducklakeSink(BatchSink):
                 f"Using provided default target schema {self.config.get('default_target_schema')}"
             )
             return self.config.get("default_target_schema")  # type: ignore
-        else:
-            # if no default target schema is provided, try to derive it from the stream name
-            # only works for database extractors (eg public-users becomes public.users)
-            stream_name_dict = stream_name_to_dict(self.stream_name)
-            if stream_name_dict.get("schema_name"):
-                if self.config.get("target_schema_prefix"):
-                    target_schema = f"{self.config.get('target_schema_prefix')}_{stream_name_dict.get('schema_name')}"
-                else:
-                    target_schema = stream_name_dict.get("schema_name")
-                self.logger.info(
-                    f"Using derived target schema {target_schema} from stream name {self.stream_name}"
-                )
-                return target_schema
+        # if no default target schema is provided, try to derive it from the stream name
+        # only works for database extractors (eg public-users becomes public.users)
+        stream_name_dict = stream_name_to_dict(self.stream_name)
+        if stream_name_dict.get("schema_name"):
+            if self.config.get("target_schema_prefix"):
+                target_schema = f"{self.config.get('target_schema_prefix')}_{stream_name_dict.get('schema_name')}"
             else:
-                raise ValueError(
-                    f"No schema name found for stream {self.stream_name} and no default target schema provided"
-                )
+                target_schema = stream_name_dict.get("schema_name")
+            self.logger.info(
+                f"Using derived target schema {target_schema} from stream name {self.stream_name}"
+            )
+            return target_schema
+        raise ValueError(
+            f"No schema name found for stream {self.stream_name} and no default target schema provided"
+        )
 
     @property
     def target_table(self) -> str:
@@ -119,18 +119,19 @@ class ducklakeSink(BatchSink):
             Max number of records to batch before `is_full=True`
         """
         return self.config.get("max_batch_size", 10000)
-    
+
     def preprocess_record(self, record: dict, context: dict) -> dict:
-        """
-        Process incoming record and convert Decimal objects to float for PyArrow compatibility
+        """Process incoming record and convert Decimal objects to float for PyArrow compatibility
         when writing to parquet files.
         """
         # Convert any Decimal objects to float so that we can write to parquet files
         for key, value in record.items():
             if isinstance(value, Decimal):
                 record[key] = float(value)
-                self.logger.debug(f"Converted Decimal field '{key}' from {value} to {record[key]}")
-        
+                self.logger.debug(
+                    f"Converted Decimal field '{key}' from {value} to {record[key]}"
+                )
+
         return record
 
     def process_record(self, record: dict, context: dict) -> None:
@@ -145,11 +146,13 @@ class ducklakeSink(BatchSink):
     def write_temp_file(self, context: dict) -> str:
         """Write the current batch to a temporary parquet file."""
         self.logger.info(
-            f'Writing batch for {self.stream_name} with {len(context["records"])} records to parquet file.'
+            f"Writing batch for {self.stream_name} with {len(context['records'])} records to parquet file."
         )
         pyarrow_df = None
         pyarrow_df = concat_tables(
-            context.get("records", []), pyarrow_df, self.pyarrow_schema  # type: ignore
+            context.get("records", []),
+            pyarrow_df,
+            self.pyarrow_schema,  # type: ignore
         )
         self.logger.info(
             f"Batch pyarrow table has ({len(pyarrow_df)} rows)"  # type: ignore
@@ -179,7 +182,6 @@ class ducklakeSink(BatchSink):
 
     def process_batch(self, context: dict) -> None:
         """Process a batch of records."""
-
         # create the target schema if it doesn't exist
         self.connector.prepare_target_schema(self.target_schema)
 
