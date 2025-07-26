@@ -23,24 +23,20 @@ class Targetducklake(Target):
         """Get config dict with JSON string parsing for complex types."""
         config = dict(super().config)
 
-        # Parse partition_fields if it's a JSON string (required if passed in via env vars)
+        # Convert certain config values from strings to their respective types
+        # This is required for certain config values that are passed in via env vars into Kubernetes pods
         if "partition_fields" in config and isinstance(config["partition_fields"], str):
             partition_fields_str = config["partition_fields"]
+            parsed_partition_fields = json.loads(partition_fields_str)
+            config["partition_fields"] = parsed_partition_fields
             logging.info(
-                f"Parsing partition_fields JSON string: {partition_fields_str}"
+                f"Successfully parsed partition_fields from string to object: {parsed_partition_fields}"
             )
-            try:
-                parsed_partition_fields = json.loads(partition_fields_str)
-                config["partition_fields"] = parsed_partition_fields
-                logging.info(
-                    f"Successfully parsed partition_fields: {parsed_partition_fields}"
-                )
-            except (json.JSONDecodeError, ValueError) as e:
-                logging.exception(
-                    f"Failed to parse partition_fields JSON '{partition_fields_str}': {e}"
-                )
-                config["partition_fields"] = None
-
+        if "max_batch_size" in config:
+            logging.warning(f"max_batch_size: {config.get('max_batch_size')}")
+            config["max_batch_size"] = int(config.get("max_batch_size", 10000))
+        if "flatten_max_level" in config:
+            config["flatten_max_level"] = int(config.get("flatten_max_level", 0))
         return config
 
     config_jsonschema = th.PropertiesList(
@@ -124,7 +120,18 @@ class Targetducklake(Target):
         ),
         th.Property(
             "flatten_max_level",
-            th.IntegerType(),
+            th.CustomType({
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "description": "String representation of flatten max level"
+                    },
+                    {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                ]
+            }),
             default=0,
             title="Flattening Max Level",
             description="Maximum depth for flattening nested fields. Set to 0 to disable flattening.",
@@ -138,7 +145,18 @@ class Targetducklake(Target):
         ),
         th.Property(
             "max_batch_size",
-            th.IntegerType(),
+            th.CustomType({
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "description": "String representation of max batch size"
+                    },
+                    {
+                        "type": "integer",
+                        "minimum": 1
+                    }
+                ]
+            }),
             default=10000,
             title="Max Batch Size",
             description="Maximum number of records to process in a single batch",
