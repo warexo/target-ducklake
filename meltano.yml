@@ -31,6 +31,10 @@ plugins:
       description: URL connection string to your catalog database
       sensitive: true
 
+    - name: meta_schema
+      label: Meta Schema
+      description: Schema name in the catalog database to use for ducklake metadata tables
+
     - name: data_path
       label: Data Path
       description: GCS, S3, or local folder path for data storage

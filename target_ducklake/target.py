@@ -1,8 +1,9 @@
 """ducklake target class."""
 
 from __future__ import annotations
-import logging
+
 import json
+import logging
 
 from singer_sdk import typing as th
 from singer_sdk.target_base import Target
@@ -16,24 +17,30 @@ class Targetducklake(Target):
     """Sample target for ducklake."""
 
     name = "target-ducklake"
-    
+
     @property
     def config(self):
         """Get config dict with JSON string parsing for complex types."""
         config = dict(super().config)
-        
+
         # Parse partition_fields if it's a JSON string (required if passed in via env vars)
         if "partition_fields" in config and isinstance(config["partition_fields"], str):
             partition_fields_str = config["partition_fields"]
-            logging.info(f"Parsing partition_fields JSON string: {partition_fields_str}")
+            logging.info(
+                f"Parsing partition_fields JSON string: {partition_fields_str}"
+            )
             try:
                 parsed_partition_fields = json.loads(partition_fields_str)
                 config["partition_fields"] = parsed_partition_fields
-                logging.info(f"Successfully parsed partition_fields: {parsed_partition_fields}")
+                logging.info(
+                    f"Successfully parsed partition_fields: {parsed_partition_fields}"
+                )
             except (json.JSONDecodeError, ValueError) as e:
-                logging.error(f"Failed to parse partition_fields JSON '{partition_fields_str}': {e}")
+                logging.exception(
+                    f"Failed to parse partition_fields JSON '{partition_fields_str}': {e}"
+                )
                 config["partition_fields"] = None
-                
+
         return config
 
     config_jsonschema = th.PropertiesList(
@@ -43,6 +50,12 @@ class Targetducklake(Target):
             secret=True,  # Flag config as protected.
             title="Catalog URL",
             description="URL connection string to your catalog database",
+        ),
+        th.Property(
+            "meta_schema",
+            th.StringType(nullable=True),
+            title="Meta Schema",
+            description="Schema name in the catalog database to use for Ducklakemetadata tables",
         ),
         th.Property(
             "data_path",
@@ -132,43 +145,46 @@ class Targetducklake(Target):
         ),
         th.Property(
             "partition_fields",
-            th.CustomType({
-                "anyOf": [
-                    {
-                        "type": "string",
-                        "description": "JSON string representation of partition fields object"
-                    },
-                    {
-                        "type": "object",
-                        "additionalProperties": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "column_name": {
-                                        "type": "string"
-                                    },
-                                    "type": {
-                                        "type": "string",
-                                        "enum": ["timestamp", "identifier"]
-                                    },
-                                    "granularity": {
-                                        "type": "array",
-                                        "items": {
+            th.CustomType(
+                {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "description": "JSON string representation of partition fields object",
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column_name": {"type": "string"},
+                                        "type": {
                                             "type": "string",
-                                            "enum": ["year", "month", "day", "hour"]
-                                        }
-                                    }
+                                            "enum": ["timestamp", "identifier"],
+                                        },
+                                        "granularity": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "year",
+                                                    "month",
+                                                    "day",
+                                                    "hour",
+                                                ],
+                                            },
+                                        },
+                                    },
+                                    "required": ["column_name", "type"],
                                 },
-                                "required": ["column_name", "type"]
-                            }
-                        }
-                    },
-                    {
-                        "type": "null"
-                    }
-                ]
-            }),
+                            },
+                        },
+                        {"type": "null"},
+                    ]
+                }
+            ),
             nullable=True,
             title="Partition Fields",
             description=(

@@ -18,6 +18,7 @@ Currently only supports append and merging data. If no key properties are provid
 | `catalog_url` | string | ✅ | - | URL connection string to your catalog database |
 | `data_path` | string | ✅ | - | GCS, S3, or local folder path for data storage |
 | `storage_type` | string | ✅ | `"local"` | Type of storage: GCS, S3, or local |
+| `meta_schema` | string | ❌ | - | Schema name in the catalog database to use for Ducklake metadata tables. If not provided will use the default schema for the catalog database (eg `public` for Postgres) |
 | `public_key` | string | ❌ | - | Public key for private GCS and S3 storage authentication (optional) |
 | `secret_key` | string | ❌ | - | Secret key for private GCS and S3 storage authentication (optional) |
 | `region` | string | ❌ | - | AWS region for S3 storage type (required when using S3 with explicit credentials) |
