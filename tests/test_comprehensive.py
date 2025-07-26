@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
-import typing as t
-import pytest
-import tempfile
-import os
-import json
-from unittest.mock import Mock, patch, MagicMock
 from decimal import Decimal
-import pyarrow as pa
+from unittest.mock import Mock, patch
 
+import pyarrow as pa
+import pytest
 from singer_sdk.exceptions import ConfigValidationError
 
-from target_ducklake.target import Targetducklake
-from target_ducklake.connector import DuckLakeConnector, DuckLakeConnectorError, JSONSchemaToDuckLake
+from target_ducklake.connector import (
+    DuckLakeConnector,
+    DuckLakeConnectorError,
+    JSONSchemaToDuckLake,
+)
+from target_ducklake.flatten import (
+    CustomJSONEncoder,
+    _apply_timestamp_format,
+    _should_auto_cast_to_timestamp,
+    flatten_record,
+    flatten_schema,
+)
+from target_ducklake.parquet_utils import (
+    _field_type_to_pyarrow_field,
+    flatten_schema_to_pyarrow_schema,
+)
 from target_ducklake.sinks import ducklakeSink
-from target_ducklake.flatten import flatten_schema, flatten_record, CustomJSONEncoder, _should_auto_cast_to_timestamp, _apply_timestamp_format
-from target_ducklake.parquet_utils import flatten_schema_to_pyarrow_schema, _field_type_to_pyarrow_field
+from target_ducklake.target import Targetducklake
 
 
 class TestTargetducklakeConfig:
@@ -28,7 +37,7 @@ class TestTargetducklakeConfig:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
         target = Targetducklake(config=config)
         assert target.name == "target-ducklake"
@@ -38,9 +47,7 @@ class TestTargetducklakeConfig:
 
     def test_missing_required_config(self):
         """Test that missing required configuration raises error."""
-        config = {
-            "storage_type": "local"
-        }
+        config = {"storage_type": "local"}
         # The Singer SDK may not raise an error immediately but during initialization
         # Let's test that the config is incomplete by checking required fields
         target = Targetducklake(config=config)
@@ -53,7 +60,7 @@ class TestTargetducklakeConfig:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "invalid_type"
+            "storage_type": "invalid_type",
         }
         with pytest.raises(ConfigValidationError):
             Targetducklake(config=config)
@@ -66,7 +73,7 @@ class TestTargetducklakeConfig:
             "storage_type": "S3",
             "public_key": "test_key",
             "secret_key": "test_secret",
-            "region": "us-east-1"
+            "region": "us-east-1",
         }
         target = Targetducklake(config=config)
         assert target.config["storage_type"] == "S3"
@@ -79,7 +86,7 @@ class TestTargetducklakeConfig:
             "data_path": "gs://bucket/path",
             "storage_type": "GCS",
             "public_key": "test_key",
-            "secret_key": "test_secret"
+            "secret_key": "test_secret",
         }
         target = Targetducklake(config=config)
         assert target.config["storage_type"] == "GCS"
@@ -89,7 +96,7 @@ class TestTargetducklakeConfig:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
         target = Targetducklake(config=config)
         assert target.config["add_record_metadata"] == False
@@ -109,10 +116,10 @@ class TestTargetducklakeConfig:
                     {
                         "column_name": "created_at",
                         "type": "timestamp",
-                        "granularity": ["year", "month"]
+                        "granularity": ["year", "month"],
                     }
                 ]
-            }
+            },
         }
         target = Targetducklake(config=config)
         assert "users" in target.config["partition_fields"]
@@ -126,7 +133,7 @@ class TestDuckLakeConnector:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
         connector = DuckLakeConnector(config)
         assert connector.catalog_url == "test.db"
@@ -135,9 +142,7 @@ class TestDuckLakeConnector:
 
     def test_connector_missing_config(self):
         """Test connector raises error with missing config."""
-        config = {
-            "storage_type": "local"
-        }
+        config = {"storage_type": "local"}
         with pytest.raises(DuckLakeConnectorError):
             DuckLakeConnector(config)
 
@@ -147,7 +152,7 @@ class TestDuckLakeConnector:
             "catalog_url": "test.db",
             "data_path": "s3://bucket/path",
             "storage_type": "S3",
-            "public_key": "test_key"
+            "public_key": "test_key",
             # Missing secret_key
         }
         with pytest.raises(DuckLakeConnectorError):
@@ -160,7 +165,7 @@ class TestDuckLakeConnector:
             "data_path": "gs://bucket/path",
             "storage_type": "GCS",
             "public_key": "test_key",
-            "secret_key": "test_secret"
+            "secret_key": "test_secret",
         }
         connector = DuckLakeConnector(config)
         assert connector.public_key == "test_key"
@@ -169,16 +174,16 @@ class TestDuckLakeConnector:
     def test_json_schema_to_ducklake_converter(self):
         """Test JSON schema to DuckLake type conversion."""
         converter = JSONSchemaToDuckLake()
-        
+
         # Test integer type handling
         schema = {"type": "integer", "minimum": -100, "maximum": 100}
         result = converter._handle_integer_type(schema)
         assert str(result) == "INTEGER"
-        
+
         schema = {"type": "integer", "minimum": -100000, "maximum": 100000}
         result = converter._handle_integer_type(schema)
         assert str(result) == "INTEGER"
-        
+
         schema = {"type": "integer", "minimum": -10000000000, "maximum": 10000000000}
         result = converter._handle_integer_type(schema)
         assert str(result) == "BIGINT"
@@ -199,7 +204,7 @@ class TestDucklakeSink:
             "flatten_max_level": 0,
             "auto_cast_timestamps": False,
             "add_record_metadata": False,
-            "max_batch_size": 10000
+            "max_batch_size": 10000,
         }
         return target
 
@@ -217,20 +222,20 @@ class TestDucklakeSink:
                     "type": "object",
                     "properties": {
                         "source": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}}
-                    }
-                }
-            }
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+            },
         }
 
     def test_sink_initialization(self, mock_target, sample_schema):
         """Test sink initialization."""
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
             sink = ducklakeSink(
                 target=mock_target,
                 stream_name="users",
                 schema=sample_schema,
-                key_properties=["id"]
+                key_properties=["id"],
             )
             assert sink.stream_name == "users"
             assert sink.schema == sample_schema
@@ -239,28 +244,28 @@ class TestDucklakeSink:
     def test_sink_target_schema_default(self, mock_target, sample_schema):
         """Test target schema derivation with default."""
         mock_target.config["default_target_schema"] = "default_schema"
-        
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
+
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
             sink = ducklakeSink(
                 target=mock_target,
                 stream_name="users",
                 schema=sample_schema,
-                key_properties=None
+                key_properties=None,
             )
             assert sink.target_schema == "default_schema"
 
     def test_sink_target_schema_from_stream_name(self, mock_target, sample_schema):
         """Test target schema derivation from stream name."""
         mock_target.config.pop("default_target_schema", None)
-        
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
-            with patch('target_ducklake.sinks.stream_name_to_dict') as mock_stream_dict:
+
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
+            with patch("target_ducklake.sinks.stream_name_to_dict") as mock_stream_dict:
                 mock_stream_dict.return_value = {"schema_name": "derived_schema"}
                 sink = ducklakeSink(
                     target=mock_target,
                     stream_name="database.derived_schema.users",
                     schema=sample_schema,
-                    key_properties=None
+                    key_properties=None,
                 )
                 # This would test the actual target_schema property
 
@@ -272,10 +277,7 @@ class TestFlattenModule:
         """Test flattening a simple schema."""
         schema = {
             "type": "object",
-            "properties": {
-                "id": {"type": "integer"},
-                "name": {"type": "string"}
-            }
+            "properties": {"id": {"type": "integer"}, "name": {"type": "string"}},
         }
         result = flatten_schema(schema)
         assert "id" in result
@@ -293,10 +295,10 @@ class TestFlattenModule:
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"},
-                        "email": {"type": "string"}
-                    }
-                }
-            }
+                        "email": {"type": "string"},
+                    },
+                },
+            },
         }
         result = flatten_schema(schema, max_level=2)
         assert "id" in result
@@ -305,13 +307,7 @@ class TestFlattenModule:
 
     def test_flatten_record(self):
         """Test flattening a record."""
-        record = {
-            "id": 1,
-            "user": {
-                "name": "John Doe",
-                "email": "john@example.com"
-            }
-        }
+        record = {"id": 1, "user": {"name": "John Doe", "email": "john@example.com"}}
         result = flatten_record(record, max_level=2)
         assert result["id"] == 1
         assert result["user__name"] == "John Doe"
@@ -327,32 +323,38 @@ class TestFlattenModule:
     def test_should_auto_cast_to_timestamp(self):
         """Test timestamp auto-casting logic."""
         # Should auto-cast
-        assert _should_auto_cast_to_timestamp(
-            "created_at", 
-            {"type": "string"}, 
-            auto_cast_timestamps=True
-        ) == True
+        assert (
+            _should_auto_cast_to_timestamp(
+                "created_at", {"type": "string"}, auto_cast_timestamps=True
+            )
+            == True
+        )
 
         # Should not auto-cast - wrong name
-        assert _should_auto_cast_to_timestamp(
-            "random_field", 
-            {"type": "string"}, 
-            auto_cast_timestamps=True
-        ) == False
+        assert (
+            _should_auto_cast_to_timestamp(
+                "random_field", {"type": "string"}, auto_cast_timestamps=True
+            )
+            == False
+        )
 
         # Should not auto-cast - disabled
-        assert _should_auto_cast_to_timestamp(
-            "created_at", 
-            {"type": "string"}, 
-            auto_cast_timestamps=False
-        ) == False
+        assert (
+            _should_auto_cast_to_timestamp(
+                "created_at", {"type": "string"}, auto_cast_timestamps=False
+            )
+            == False
+        )
 
         # Should not auto-cast - already has format
-        assert _should_auto_cast_to_timestamp(
-            "created_at", 
-            {"type": "string", "format": "date"}, 
-            auto_cast_timestamps=True
-        ) == False
+        assert (
+            _should_auto_cast_to_timestamp(
+                "created_at",
+                {"type": "string", "format": "date"},
+                auto_cast_timestamps=True,
+            )
+            == False
+        )
 
     def test_apply_timestamp_format(self):
         """Test applying timestamp format."""
@@ -369,9 +371,7 @@ class TestParquetUtils:
         """Test PyArrow field conversion."""
         # Test string field
         field = _field_type_to_pyarrow_field(
-            "name", 
-            {"type": "string"}, 
-            required_fields=["name"]
+            "name", {"type": "string"}, required_fields=["name"]
         )
         assert field.name == "name"
         assert field.type == pa.string()
@@ -379,17 +379,13 @@ class TestParquetUtils:
 
         # Test nullable field
         field = _field_type_to_pyarrow_field(
-            "optional_field", 
-            {"type": "string"}, 
-            required_fields=["other_field"]
+            "optional_field", {"type": "string"}, required_fields=["other_field"]
         )
         assert field.nullable
 
         # Test integer field
         field = _field_type_to_pyarrow_field(
-            "id", 
-            {"type": "integer"}, 
-            required_fields=["id"]
+            "id", {"type": "integer"}, required_fields=["id"]
         )
         assert field.type == pa.int64()
 
@@ -398,7 +394,7 @@ class TestParquetUtils:
         flattened_schema = {
             "id": {"type": "integer"},
             "name": {"type": "string"},
-            "email": {"type": "string"}
+            "email": {"type": "string"},
         }
         schema = flatten_schema_to_pyarrow_schema(flattened_schema)
         assert isinstance(schema, pa.Schema)
@@ -418,7 +414,7 @@ class TestIntegrationScenarios:
             "data_path": "/tmp/test",
             "storage_type": "local",
             "add_record_metadata": True,
-            "flatten_max_level": 2
+            "flatten_max_level": 2,
         }
         target = Targetducklake(config=config)
         assert target.config["storage_type"] == "local"
@@ -433,7 +429,7 @@ class TestIntegrationScenarios:
             "storage_type": "S3",
             "public_key": "test_key",
             "secret_key": "test_secret",
-            "region": "us-east-1"
+            "region": "us-east-1",
         }
         target = Targetducklake(config=config)
         assert target.config["storage_type"] == "S3"
@@ -450,10 +446,10 @@ class TestIntegrationScenarios:
                     {
                         "column_name": "event_date",
                         "type": "timestamp",
-                        "granularity": ["year", "month", "day"]
+                        "granularity": ["year", "month", "day"],
                     }
                 ]
-            }
+            },
         }
         target = Targetducklake(config=config)
         assert "events" in target.config["partition_fields"]
@@ -463,38 +459,29 @@ class TestIntegrationScenarios:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
-        
+
         schema = {
             "type": "object",
-            "properties": {
-                "id": {"type": "integer"},
-                "name": {"type": "string"}
-            }
+            "properties": {"id": {"type": "integer"}, "name": {"type": "string"}},
         }
-        
+
         # Test with key properties (should merge)
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
             target = Mock()
             target.config = config
             sink = ducklakeSink(
-                target=target,
-                stream_name="users",
-                schema=schema,
-                key_properties=["id"]
+                target=target, stream_name="users", schema=schema, key_properties=["id"]
             )
             assert sink.key_properties == ["id"]
-        
+
         # Test without key properties (should append)
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
             target = Mock()
             target.config = config
             sink = ducklakeSink(
-                target=target,
-                stream_name="users",
-                schema=schema,
-                key_properties=None
+                target=target, stream_name="users", schema=schema, key_properties=None
             )
             # Singer SDK may convert None to empty list, both indicate no key properties
             assert sink.key_properties is None or sink.key_properties == []
@@ -510,7 +497,7 @@ class TestErrorHandling:
             "data_path": "s3://bucket/path",
             "storage_type": "S3",
             "public_key": "invalid_key",
-            "secret_key": "invalid_secret"
+            "secret_key": "invalid_secret",
         }
         # Should initialize without error, but fail on actual connection
         target = Targetducklake(config=config)
@@ -521,7 +508,7 @@ class TestErrorHandling:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
         target = Targetducklake(config=config)
         assert target.config.get("partition_fields") is None
@@ -532,7 +519,7 @@ class TestErrorHandling:
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
             "storage_type": "local",
-            "flatten_max_level": -1
+            "flatten_max_level": -1,
         }
         target = Targetducklake(config=config)
         assert target.config["flatten_max_level"] == -1  # Should accept negative values
@@ -549,16 +536,16 @@ class TestErrorHandling:
         config = {
             "catalog_url": "test.db",
             "data_path": "/tmp/test",
-            "storage_type": "local"
+            "storage_type": "local",
         }
-        
-        with patch('target_ducklake.sinks.DuckLakeConnector'):
+
+        with patch("target_ducklake.sinks.DuckLakeConnector"):
             target = Mock()
             target.config = config
             sink = ducklakeSink(
                 target=target,
                 stream_name="simple_name",  # No schema separation
                 schema={"type": "object", "properties": {"id": {"type": "integer"}}},
-                key_properties=None
+                key_properties=None,
             )
-            assert sink.stream_name == "simple_name" 
+            assert sink.stream_name == "simple_name"

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import duckdb
 import logging
-from typing import Any, Dict, Sequence
 import math
+from collections.abc import Sequence
+from typing import Any, Dict
 
+import duckdb
 from singer_sdk.connectors.sql import JSONSchemaToSQL
-from sqlalchemy.types import JSON, BIGINT, INTEGER
+from sqlalchemy.types import BIGINT, INTEGER, JSON
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,6 @@ PARTITION_GRANULARITIES = ["year", "month", "day", "hour"]
 
 class DuckLakeConnectorError(Exception):
     """Custom exception for DuckLake connector errors."""
-
-    pass
 
 
 class JSONSchemaToDuckLake(JSONSchemaToSQL):
@@ -65,6 +64,7 @@ class DuckLakeConnector:
 
         self._connection: duckdb.DuckDBPyConnection | None = None
         self.catalog_name = "ducklake_catalog"
+        self.meta_schema = config.get("meta_schema")
 
     def _validate_config(self) -> None:
         """Validate required configuration parameters."""
@@ -139,8 +139,16 @@ class DuckLakeConnector:
         script_parts = [
             "INSTALL ducklake;",
             "INSTALL postgres;",
-            f"ATTACH 'ducklake:postgres:{self.catalog_url}' AS {self.catalog_name} (DATA_PATH '{self.data_path}');",
         ]
+
+        # Build ATTACH parameters
+        attach_params = {"DATA_PATH": f"'{self.data_path}'"}
+        if self.meta_schema:
+            attach_params["META_SCHEMA"] = f"'{self.meta_schema}'"
+
+        params_str = ", ".join(f"{key} {value}" for key, value in attach_params.items())
+        attach_statement = f"ATTACH 'ducklake:postgres:{self.catalog_url}' AS {self.catalog_name} ({params_str});"
+        script_parts.append(attach_statement)
 
         # Add secrets for cloud storage if configured
         if self.public_key and self.secret_key:
@@ -155,12 +163,12 @@ class DuckLakeConnector:
             elif self.storage_type == "S3":
                 # For S3, region is required when using explicit credentials
                 secret_parts = [
-                    f"TYPE s3, " f"KEY_ID '{self.public_key}'",
+                    f"TYPE s3, KEY_ID '{self.public_key}'",
                     f"SECRET '{self.secret_key}'",
                     f"REGION '{self.region}'",  # Always include since we validate it's required
                 ]
 
-                script_parts.append(f"CREATE SECRET (" + ", ".join(secret_parts) + ");")
+                script_parts.append("CREATE SECRET (" + ", ".join(secret_parts) + ");")
         elif self.storage_type in ["GCS", "S3"]:
             # Log info when cloud storage is configured but no auth is provided
             logger.info(
@@ -241,7 +249,7 @@ class DuckLakeConnector:
         """Create an empty table in the target schema."""
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.catalog_name}.{target_schema_name}.{table_name} (
-            {', '.join([f'{col["name"]} {col["type"]}' for col in columns])}
+            {", ".join([f"{col['name']} {col['type']}" for col in columns])}
         );
         """
         logger.info(
@@ -256,8 +264,7 @@ class DuckLakeConnector:
         columns: list[dict[str, str]],
         partition_fields: list[dict[str, str]] | None = None,
     ) -> list[str]:
-        """
-        Prepare the table for the target schema.
+        """Prepare the table for the target schema.
         If the table doesn't exist, create it.
         Add missing columns to existing table if necessary.
         Returns all columns in the table and order in which they appear.
@@ -323,8 +330,7 @@ class DuckLakeConnector:
         file_columns: list[str],
         target_table_columns: list[str],
     ) -> str:
-        """
-        Build SQL column list for SELECT statement used for INSERT and MERGE.
+        """Build SQL column list for SELECT statement used for INSERT and MERGE.
         Orders columns by which they appear in the target table.
         If a column is not found in the file, it is replaced with NULL.
         """
@@ -346,8 +352,7 @@ class DuckLakeConnector:
         file_columns: list[str],
         target_table_columns: list[str],
     ):
-        """
-        Insert data from a parquet file into the table.
+        """Insert data from a parquet file into the table.
         Orders columns by which they appear in the target table.
         If a column is not found in the file, it is inserted as NULL.
         """
@@ -365,8 +370,7 @@ class DuckLakeConnector:
         target_table_columns: list[str],
         key_properties: Sequence[str],
     ):
-        """
-        DuckLake doesn't support MERGE natively, so we need to use a workaround
+        """DuckLake doesn't support MERGE natively, so we need to use a workaround
         We first delete rows in the target table that are also in the parquet file (based on key_property)
         Then we insert the new data
         """
@@ -395,8 +399,7 @@ class DuckLakeConnector:
         self.execute(combined_sql)
 
     def json_to_ducklake_schema(self, schema: dict) -> list[dict[str, str]]:
-        """
-        Convert a JSON schema to an array of dictionaries with column name and type.
+        """Convert a JSON schema to an array of dictionaries with column name and type.
         Example Output: [{'name': 'id', 'type': 'INTEGER'}, {'name': 'name', 'type': 'STRING'}]
         """
         ducklake_schema = []
@@ -414,7 +417,7 @@ class DuckLakeConnector:
             self._connection.close()
             self._connection = None
 
-    def __enter__(self) -> "DuckLakeConnector":
+    def __enter__(self) -> DuckLakeConnector:
         """Context manager entry."""
         return self
 
