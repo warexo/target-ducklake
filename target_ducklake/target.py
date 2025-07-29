@@ -120,18 +120,17 @@ class Targetducklake(Target):
         ),
         th.Property(
             "flatten_max_level",
-            th.CustomType({
-                "anyOf": [
-                    {
-                        "type": "string",
-                        "description": "String representation of flatten max level"
-                    },
-                    {
-                        "type": "integer",
-                        "minimum": 0
-                    }
-                ]
-            }),
+            th.CustomType(
+                {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "description": "String representation of flatten max level",
+                        },
+                        {"type": "integer", "minimum": 0},
+                    ]
+                }
+            ),
             default=0,
             title="Flattening Max Level",
             description="Maximum depth for flattening nested fields. Set to 0 to disable flattening.",
@@ -145,18 +144,17 @@ class Targetducklake(Target):
         ),
         th.Property(
             "max_batch_size",
-            th.CustomType({
-                "anyOf": [
-                    {
-                        "type": "string",
-                        "description": "String representation of max batch size"
-                    },
-                    {
-                        "type": "integer",
-                        "minimum": 1
-                    }
-                ]
-            }),
+            th.CustomType(
+                {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "description": "String representation of max batch size",
+                        },
+                        {"type": "integer", "minimum": 1},
+                    ]
+                }
+            ),
             default=10000,
             title="Max Batch Size",
             description="Maximum number of records to process in a single batch",
