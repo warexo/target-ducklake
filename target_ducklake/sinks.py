@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import polars as pl
 import pyarrow.parquet as pq
 from singer_sdk import Target
 
@@ -144,6 +145,34 @@ class ducklakeSink(BatchSink):
         )
         super().process_record(record_flatten, context)
 
+    def _remove_temp_table_duplicates(self, pyarrow_df):
+        """Remove duplicates within PyArrow table based on key properties."""
+        if not self.key_properties or pyarrow_df is None:
+            return pyarrow_df
+
+        # Check that all key properties exist in the pyarrow table
+        available_columns = set(pyarrow_df.column_names)
+        for key_property in self.key_properties:
+            if key_property not in available_columns:
+                raise ValueError(
+                    f"Key property {key_property} not found in pyarrow temp file for {self.target_table}. Available columns: {list(available_columns)}"
+                )
+
+        original_row_count = len(pyarrow_df)
+        # Convert to polars, drop duplicates, then back to pyarrow
+        polars_df = pl.from_arrow(pyarrow_df)
+        polars_df = polars_df.unique(subset=self.key_properties)
+        pyarrow_df = polars_df.to_arrow()
+
+        new_row_count = len(pyarrow_df)
+        duplicates_removed = original_row_count - new_row_count
+        if duplicates_removed > 0:
+            self.logger.info(
+                f"Removed {duplicates_removed} duplicate rows based on key properties: {self.key_properties}"
+            )
+
+        return pyarrow_df
+
     def write_temp_file(self, context: dict) -> str:
         """Write the current batch to a temporary parquet file."""
         self.logger.info(
@@ -155,6 +184,11 @@ class ducklakeSink(BatchSink):
             pyarrow_df,
             self.pyarrow_schema,  # type: ignore
         )
+
+        # Drop duplicates based on key properties if they exist in temp file
+        if self.key_properties and pyarrow_df is not None:
+            pyarrow_df = self._remove_temp_table_duplicates(pyarrow_df)
+
         self.logger.info(
             f"Batch pyarrow table has ({len(pyarrow_df)} rows)"  # type: ignore
         )
