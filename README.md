@@ -6,7 +6,6 @@ Currently only supports append and merging data. If no key properties are provid
 
 ## TODOs
 
-- support merging when stream has multiple key properties (currently only supports one key property)
 - support deleting data from the target or setting _sdc_deleted_at field (example use-case: syncing from Postgres using log-based change data capture)
 
 ## Configuration

@@ -196,7 +196,7 @@ class DuckLakeConnector:
             logger.debug(f"Executing query: {query}")
             return self.connection.execute(query, parameters)
         except Exception as e:
-            raise DuckLakeConnectorError(f"Query execution failed: {e}") from e
+            raise DuckLakeConnectorError(f"Query {query} failed with error: {e}") from e
 
     def prepare_target_schema(self, target_schema_name: str) -> None:
         """Prepare the schema for the target table."""
@@ -374,19 +374,23 @@ class DuckLakeConnector:
         We first delete rows in the target table that are also in the parquet file (based on key_property)
         Then we insert the new data
         """
-        if len(key_properties) > 1:
-            raise DuckLakeConnectorError("Only one key property is supported for MERGE")
-
-        key_property = key_properties[0]
         columns_sql = self._build_columns_sql(file_columns, target_table_columns)
 
-        # Combine all statements in one execute call with explicit transaction
-        # Rollsback if any statement fails, avoids partial updates/deletes
+        if len(key_properties) == 1:
+            key_condition = key_properties[0]
+        else:
+            logger.info(
+                f"Multiple key properties detected: {key_properties}, attempting to merge with composite key"
+            )
+            key_condition = f"({'||'.join(key_properties)})"
+
+        # Build the atomic merge operation
+        table_ref = f"{self.catalog_name}.{target_schema_name}.{table_name}"
         combined_sql = f"""
         BEGIN TRANSACTION;
-        DELETE FROM {self.catalog_name}.{target_schema_name}.{table_name} 
-        WHERE {key_property} IN (SELECT {key_property} FROM '{file_location}');
-        INSERT INTO {self.catalog_name}.{target_schema_name}.{table_name} 
+        DELETE FROM {table_ref} 
+        WHERE {key_condition} IN (SELECT {key_condition} FROM '{file_location}');
+        INSERT INTO {table_ref} 
         SELECT {columns_sql} FROM '{file_location}';
         COMMIT;
         """
