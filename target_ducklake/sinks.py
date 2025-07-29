@@ -35,6 +35,8 @@ class ducklakeSink(BatchSink):
         super().__init__(target, stream_name, schema, key_properties)
         self.temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
         self.files_saved = 0
+        # Log original schema for debugging
+        self.logger.info(f"Original schema for stream '{stream_name}': {self.schema}")
 
         # Use the connector for database operations
         self.connector = DuckLakeConnector(dict(self.config))
@@ -47,16 +49,15 @@ class ducklakeSink(BatchSink):
             max_level=self.flatten_max_level,
             auto_cast_timestamps=self.auto_cast_timestamps,
         )
+        # Log flattened schema for debugging
+        self.logger.info(
+            f"Flattened schema for stream '{stream_name}': {self.flatten_schema}"
+        )
         self.pyarrow_schema = flatten_schema_to_pyarrow_schema(self.flatten_schema)
         self.ducklake_schema = self.connector.json_to_ducklake_schema(
             self.flatten_schema
         )
-
-        # # Log the schemas for debugging
-        self.logger.info(f"Original schema for stream '{stream_name}': {self.schema}")
-        self.logger.info(
-            f"Flattened schema for stream '{stream_name}': {self.flatten_schema}"
-        )
+        # Log pyarrow and ducklake schemas for debugging
         self.logger.info(
             f"PyArrow schema for stream '{stream_name}': {self.pyarrow_schema}"
         )

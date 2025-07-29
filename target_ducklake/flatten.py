@@ -1,5 +1,6 @@
-"""Adapted from target-duckdb
+"""Adapted from target-duckdb and Meltano SDK
 https://github.com/jwills/target-duckdb/blob/36c8ce68a0b2584c4bbb07325482968b1edc0c40/target_duckdb/db_sync.py#L74
+https://github.com/meltano/sdk/blob/35b499d6163f91752fd674f2a3e46a7e22a1fb47/singer_sdk/helpers/_flattening.py#L342
 """
 
 import collections
@@ -99,6 +100,11 @@ def flatten_record(
 def flatten_schema(
     d, parent_key=[], sep="__", level=0, max_level=0, auto_cast_timestamps=False
 ):
+    """
+    This function is a bit of a blackbox. Adapted from DuckDB target and Meltano SDK.
+    See note mentioned here in official Meltano SDK repo:
+    https://github.com/meltano/sdk/blob/35b499d6163f91752fd674f2a3e46a7e22a1fb47/singer_sdk/helpers/_flattening.py#L342
+    """
     items = []
 
     if "properties" not in d:
@@ -140,7 +146,11 @@ def flatten_schema(
             while entry["type"] == "null":
                 i += 1
                 entry = llv[i]
-            entry["type"] = ["null", entry["type"]]
+            # modified to handle type value in schema is string or list of strings
+            if isinstance(entry["type"], str):
+                entry["type"] = list(set(["null", entry["type"]]))
+            elif isinstance(entry["type"], list):
+                entry["type"] = list(set(["null"] + entry["type"]))  # type: ignore
             items.append((new_key, entry))
         elif len(v.values()) > 0:
             if list(v.values())[0][0]["type"] == "string":
