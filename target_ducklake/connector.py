@@ -234,7 +234,7 @@ class DuckLakeConnector:
     ) -> None:
         """Add columns to the table one by one."""
         for col in columns:
-            add_column_query = f"ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} ADD COLUMN {col['name']} {col['type']};"
+            add_column_query = f'ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} ADD COLUMN "{col["name"]}" {col["type"]};'
             logger.info(
                 f"Adding column {col['name']} ({col['type']}) to table {table_name}"
             )
@@ -249,7 +249,7 @@ class DuckLakeConnector:
         """Create an empty table in the target schema."""
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.catalog_name}.{target_schema_name}.{table_name} (
-            {", ".join([f"{col['name']} {col['type']}" for col in columns])}
+            {", ".join([f'"{col["name"]}" {col["type"]}' for col in columns])}
         );
         """
         logger.info(
@@ -340,7 +340,7 @@ class DuckLakeConnector:
                 logger.warning(f"Column {col} not found in source, using NULL")
                 columns_sql += "NULL, "
             else:
-                columns_sql += f"{col}, "
+                columns_sql += f' "{col}", '
         # Remove trailing comma and space
         return columns_sql[:-2]
 
