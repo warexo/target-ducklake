@@ -57,6 +57,7 @@ class DuckLakeConnector:
 
         self.catalog_url = config.get("catalog_url")
         self.data_path = config.get("data_path")
+        self.catalog_type = config.get("catalog_type", "postgres")
         self.storage_type = config.get("storage_type")
         self.public_key = config.get("public_key")
         self.secret_key = config.get("secret_key")
@@ -141,13 +142,23 @@ class DuckLakeConnector:
             "INSTALL postgres;",
         ]
 
-        # Build ATTACH parameters
-        attach_params = {"DATA_PATH": f"'{self.data_path}'"}
-        if self.meta_schema:
-            attach_params["META_SCHEMA"] = f"'{self.meta_schema}'"
+        if self.catalog_type == "duckdb":
+            logger.info(
+                f"Detected DuckDB catalog type: {self.catalog_type}. Local DuckDB catalog will be used."
+            )
+            attach_statement = (
+                f"ATTACH 'ducklake:metadata.ducklake' AS {self.catalog_name};"
+            )
+        else:
+            # Build ATTACH parameters
+            attach_params = {"DATA_PATH": f"'{self.data_path}'"}
+            if self.meta_schema:
+                attach_params["META_SCHEMA"] = f"'{self.meta_schema}'"
 
-        params_str = ", ".join(f"{key} {value}" for key, value in attach_params.items())
-        attach_statement = f"ATTACH 'ducklake:postgres:{self.catalog_url}' AS {self.catalog_name} ({params_str});"
+            params_str = ", ".join(
+                f"{key} {value}" for key, value in attach_params.items()
+            )
+            attach_statement = f"ATTACH 'ducklake:{self.catalog_type}:{self.catalog_url}' AS {self.catalog_name} ({params_str});"
         script_parts.append(attach_statement)
 
         # Add secrets for cloud storage if configured

@@ -48,6 +48,16 @@ class Targetducklake(Target):
             description="URL connection string to your catalog database",
         ),
         th.Property(
+            "catalog_type",
+            th.StringType(
+                allowed_values=["postgres", "sqlite", "mysql", "duckdb"],
+                nullable=False,
+            ),
+            default="postgres",
+            title="Catalog Type",
+            description="Type of catalog database: postgres, sqlite, mysql, or duckdb",
+        ),
+        th.Property(
             "meta_schema",
             th.StringType(nullable=True),
             title="Meta Schema",
