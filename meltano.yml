@@ -31,6 +31,16 @@ plugins:
       description: URL connection string to your catalog database
       sensitive: true
 
+    - name: catalog_type
+      label: Catalog Type
+      description: "Type of catalog database: postgres, sqlite, mysql, or duckdb"
+      default: postgres
+      options:
+        - postgres
+        - sqlite
+        - mysql
+        - duckdb
+
     - name: meta_schema
       label: Meta Schema
       description: Schema name in the catalog database to use for ducklake metadata tables

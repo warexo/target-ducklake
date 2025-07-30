@@ -521,8 +521,8 @@ class TestErrorHandling:
             "storage_type": "local",
             "flatten_max_level": -1,
         }
-        target = Targetducklake(config=config)
-        assert target.config["flatten_max_level"] == -1  # Should accept negative values
+        with pytest.raises(ConfigValidationError):
+            Targetducklake(config=config)
 
     def test_empty_schema_handling(self):
         """Test handling of empty schema."""

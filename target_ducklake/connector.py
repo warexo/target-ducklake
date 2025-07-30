@@ -57,6 +57,7 @@ class DuckLakeConnector:
 
         self.catalog_url = config.get("catalog_url")
         self.data_path = config.get("data_path")
+        self.catalog_type = config.get("catalog_type", "postgres")
         self.storage_type = config.get("storage_type")
         self.public_key = config.get("public_key")
         self.secret_key = config.get("secret_key")
@@ -141,13 +142,23 @@ class DuckLakeConnector:
             "INSTALL postgres;",
         ]
 
-        # Build ATTACH parameters
-        attach_params = {"DATA_PATH": f"'{self.data_path}'"}
-        if self.meta_schema:
-            attach_params["META_SCHEMA"] = f"'{self.meta_schema}'"
+        if self.catalog_type == "duckdb":
+            logger.info(
+                f"Detected DuckDB catalog type: {self.catalog_type}. Local DuckDB catalog will be used."
+            )
+            attach_statement = (
+                f"ATTACH 'ducklake:metadata.ducklake' AS {self.catalog_name};"
+            )
+        else:
+            # Build ATTACH parameters
+            attach_params = {"DATA_PATH": f"'{self.data_path}'"}
+            if self.meta_schema:
+                attach_params["META_SCHEMA"] = f"'{self.meta_schema}'"
 
-        params_str = ", ".join(f"{key} {value}" for key, value in attach_params.items())
-        attach_statement = f"ATTACH 'ducklake:postgres:{self.catalog_url}' AS {self.catalog_name} ({params_str});"
+            params_str = ", ".join(
+                f"{key} {value}" for key, value in attach_params.items()
+            )
+            attach_statement = f"ATTACH 'ducklake:{self.catalog_type}:{self.catalog_url}' AS {self.catalog_name} ({params_str});"
         script_parts.append(attach_statement)
 
         # Add secrets for cloud storage if configured
@@ -234,7 +245,7 @@ class DuckLakeConnector:
     ) -> None:
         """Add columns to the table one by one."""
         for col in columns:
-            add_column_query = f"ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} ADD COLUMN {col['name']} {col['type']};"
+            add_column_query = f'ALTER TABLE {self.catalog_name}.{target_schema_name}.{table_name} ADD COLUMN "{col["name"]}" {col["type"]};'
             logger.info(
                 f"Adding column {col['name']} ({col['type']}) to table {table_name}"
             )
@@ -249,7 +260,7 @@ class DuckLakeConnector:
         """Create an empty table in the target schema."""
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.catalog_name}.{target_schema_name}.{table_name} (
-            {", ".join([f"{col['name']} {col['type']}" for col in columns])}
+            {", ".join([f'"{col["name"]}" {col["type"]}' for col in columns])}
         );
         """
         logger.info(
@@ -340,7 +351,7 @@ class DuckLakeConnector:
                 logger.warning(f"Column {col} not found in source, using NULL")
                 columns_sql += "NULL, "
             else:
-                columns_sql += f"{col}, "
+                columns_sql += f' "{col}", '
         # Remove trailing comma and space
         return columns_sql[:-2]
 
