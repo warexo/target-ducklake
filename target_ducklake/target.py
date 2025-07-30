@@ -130,17 +130,12 @@ class Targetducklake(Target):
         ),
         th.Property(
             "flatten_max_level",
-            th.CustomType(
-                {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                            "description": "String representation of flatten max level",
-                        },
-                        {"type": "integer", "minimum": 0},
-                    ]
-                }
-            ),
+            th.CustomType({
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "integer", "minimum": 0}
+                ]
+            }),
             default=0,
             title="Flattening Max Level",
             description="Maximum depth for flattening nested fields. Set to 0 to disable flattening.",
@@ -156,7 +151,7 @@ class Targetducklake(Target):
             "max_batch_size",
             th.CustomType(
                 {
-                    "anyOf": [
+                    "oneOf": [
                         {
                             "type": "string",
                             "description": "String representation of max batch size",
@@ -173,7 +168,7 @@ class Targetducklake(Target):
             "partition_fields",
             th.CustomType(
                 {
-                    "anyOf": [
+                    "oneOf": [
                         {
                             "type": "string",
                             "description": "JSON string representation of partition fields object",
