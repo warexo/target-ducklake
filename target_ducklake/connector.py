@@ -140,6 +140,7 @@ class DuckLakeConnector:
         script_parts = [
             "INSTALL ducklake;",
             "INSTALL postgres;",
+            "SET ducklake_max_retry_count=100;",
         ]
 
         if self.catalog_type == "duckdb":
