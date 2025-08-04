@@ -30,6 +30,7 @@ Currently only supports append and merging data. If no key properties are provid
 | `max_batch_size` | integer | ❌ | `10000` | Maximum number of records to process in a single batch |
 | `partition_fields` | object | ❌ | - | Object mapping stream names to arrays of partition column definitions. Each stream key maps directly to an array of column definitions |
 | `auto_cast_timestamps` | boolean | ❌ | `false` | When True, automatically attempts to cast timestamp-like fields to timestamp types in ducklake |
+| `validate_records` | boolean | ❌ | `false` | Whether to validate the schema of the incoming streams |
 
 ### Example Meltano YAML Configuration
 
