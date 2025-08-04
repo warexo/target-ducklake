@@ -223,6 +223,13 @@ class Targetducklake(Target):
                 "When True, automatically attempts to cast timestamp-like fields to timestamp types in ducklake."
             ),
         ),
+        th.Property(
+            "validate_records",
+            th.BooleanType(),
+            default=False,
+            title="Validate Records",
+            description="Whether to validate the schema of the incoming streams.",
+        ),
     ).to_dict()
 
     default_sink_class = ducklakeSink
