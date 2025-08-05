@@ -14,8 +14,6 @@ from target_ducklake.sinks import (
 
 
 class Targetducklake(Target):
-    """Sample target for ducklake."""
-
     name = "target-ducklake"
 
     @property
@@ -25,6 +23,7 @@ class Targetducklake(Target):
 
         # Convert certain config values from strings to their respective types
         # This is required for certain config values that are passed in via env vars into Kubernetes pods
+        # Kubernetes pods only support string values for env vars (at least in GCP)
         if "partition_fields" in config and isinstance(config["partition_fields"], str):
             partition_fields_str = config["partition_fields"]
             parsed_partition_fields = json.loads(partition_fields_str)
@@ -37,6 +36,14 @@ class Targetducklake(Target):
             config["max_batch_size"] = int(config.get("max_batch_size", 10000))
         if "flatten_max_level" in config:
             config["flatten_max_level"] = int(config.get("flatten_max_level", 0))
+        if "validate_records" in config and isinstance(config["validate_records"], str):
+            config["validate_records"] = config["validate_records"].lower() == "true"
+        if "overwrite_if_no_pk" in config and isinstance(
+            config["overwrite_if_no_pk"], str
+        ):
+            config["overwrite_if_no_pk"] = (
+                config["overwrite_if_no_pk"].lower() == "true"
+            )
         return config
 
     config_jsonschema = th.PropertiesList(
@@ -222,14 +229,34 @@ class Targetducklake(Target):
         ),
         th.Property(
             "validate_records",
-            th.BooleanType(),
+            th.CustomType(
+                {
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "String representation of validate records",
+                        },
+                        {"type": "boolean"},
+                    ]
+                }
+            ),
             default=False,
             title="Validate Records",
             description="Whether to validate the schema of the incoming streams.",
         ),
         th.Property(
             "overwrite_if_no_pk",
-            th.BooleanType(),
+            th.CustomType(
+                {
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "description": "String representation of overwrite if no primary key",
+                        },
+                        {"type": "boolean"},
+                    ]
+                }
+            ),
             default=False,
             title="Overwrite If No Primary Key",
             description="When True, truncates the target table before inserting records if no primary keys are defined in the stream.",
