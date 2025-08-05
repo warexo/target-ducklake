@@ -119,5 +119,11 @@ plugins:
       description: Whether to validate the schema of the incoming streams.
       default: false
 
+    - name: overwrite_if_no_pk
+      kind: boolean
+      label: Overwrite If No Primary Key
+      description: When True, truncates the target table before inserting records if no primary keys are defined in the stream.
+      default: false
+
     settings_group_validation:
     - [catalog_url, data_path]
