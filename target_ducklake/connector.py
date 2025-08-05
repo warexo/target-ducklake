@@ -232,7 +232,7 @@ class DuckLakeConnector:
         result = self.execute(check_table_query)
         return result.fetchone()[0] > 0
 
-    def _get_table_columns(self, target_schema_name: str, table_name: str) -> list[str]:
+    def get_table_columns(self, target_schema_name: str, table_name: str) -> list[str]:
         """Get the columns of the table."""
         get_columns_query = f"PRAGMA TABLE_INFO('{self.catalog_name}.{target_schema_name}.{table_name}');"
         result = self.execute(get_columns_query).fetchall()
@@ -275,6 +275,7 @@ class DuckLakeConnector:
         table_name: str,
         columns: list[dict[str, str]],
         partition_fields: list[dict[str, str]] | None = None,
+        overwrite_table: bool = False,
     ) -> list[str]:
         """Prepare the table for the target schema.
         If the table doesn't exist, create it.
@@ -288,13 +289,20 @@ class DuckLakeConnector:
                 f"Table {table_name} already exists in schema {target_schema_name}. Checking if columns match..."
             )
             # get the columns of the existing table
-            existing_columns = self._get_table_columns(target_schema_name, table_name)
+            existing_columns = self.get_table_columns(target_schema_name, table_name)
             new_columns = [
                 col for col in columns if col["name"] not in existing_columns
             ]
             if new_columns:
                 logger.info(f"Adding new columns to table {table_name}: {new_columns}")
                 self._add_columns(target_schema_name, table_name, new_columns)
+
+        # truncate the table if necessary
+        if overwrite_table:
+            logger.info(f"Truncating table {table_name} in schema {target_schema_name}")
+            self.execute(
+                f"TRUNCATE TABLE {self.catalog_name}.{target_schema_name}.{table_name};"
+            )
 
         # Add partition fields if any
         if partition_fields:
@@ -303,7 +311,7 @@ class DuckLakeConnector:
             )
             self._add_partition_fields(target_schema_name, table_name, partition_fields)
 
-        return self._get_table_columns(target_schema_name, table_name)
+        return self.get_table_columns(target_schema_name, table_name)
 
     def _add_partition_fields(
         self,

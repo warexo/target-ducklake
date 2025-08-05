@@ -36,6 +36,8 @@ class ducklakeSink(BatchSink):
         super().__init__(target, stream_name, schema, key_properties)
         self.temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
         self.files_saved = 0
+
+        # NOTE: we probably don't need all this logging, but useful for debugging while target is in development
         # Log original schema for debugging
         self.logger.info(f"Original schema for stream '{stream_name}': {self.schema}")
 
@@ -77,10 +79,18 @@ class ducklakeSink(BatchSink):
             self.logger.info(
                 f"Key properties found for {self.stream_name}, {self.key_properties}, merging data"
             )
+            self.should_overwrite_table = False
         else:
-            self.logger.info(
-                f"No key properties found for {self.stream_name}, appending data"
-            )
+            if self.config.get("overwrite_if_no_pk", False):
+                self.logger.info(
+                    f"No key properties found for {self.stream_name} and overwrite_if_no_pk is True, overwriting table"
+                )
+                self.should_overwrite_table = True
+            else:
+                self.logger.info(
+                    f"No key properties found for {self.stream_name} and overwrite_if_no_pk is False, appending data"
+                )
+                self.should_overwrite_table = False
 
     @property
     def target_schema(self) -> str:
@@ -121,6 +131,19 @@ class ducklakeSink(BatchSink):
             Max number of records to batch before `is_full=True`
         """
         return self.config.get("max_batch_size", 10000)
+
+    def setup(self) -> None:
+        # create the target schema if it doesn't exist
+        self.connector.prepare_target_schema(self.target_schema)
+
+        # prepare the table
+        self.connector.prepare_table(
+            target_schema_name=self.target_schema,
+            table_name=self.target_table,
+            columns=self.ducklake_schema,
+            partition_fields=self.partition_fields,
+            overwrite_table=self.should_overwrite_table,
+        )
 
     def preprocess_record(self, record: dict, context: dict) -> dict:
         """Process incoming record and convert Decimal objects to float for PyArrow compatibility
@@ -217,21 +240,16 @@ class ducklakeSink(BatchSink):
 
     def process_batch(self, context: dict) -> None:
         """Process a batch of records."""
-        # create the target schema if it doesn't exist
-        self.connector.prepare_target_schema(self.target_schema)
 
         # first write each batch to a parquet file
         temp_file_path = self.write_temp_file(context)
         self.logger.info(f"Temp file path: {temp_file_path}")
 
-        # prepare the table
-        table_columns = self.connector.prepare_table(
-            self.target_schema,
-            self.target_table,
-            self.ducklake_schema,
-            self.partition_fields,
-        )
+        # get the columns from the file and the table
         file_columns = [col["name"] for col in self.ducklake_schema]
+        table_columns = self.connector.get_table_columns(
+            self.target_schema, self.target_table
+        )
 
         # If no key properties, we simply append the data
         if not self.key_properties:

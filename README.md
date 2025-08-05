@@ -31,6 +31,7 @@ Currently only supports append and merging data. If no key properties are provid
 | `partition_fields` | object | ❌ | - | Object mapping stream names to arrays of partition column definitions. Each stream key maps directly to an array of column definitions |
 | `auto_cast_timestamps` | boolean | ❌ | `false` | When True, automatically attempts to cast timestamp-like fields to timestamp types in ducklake |
 | `validate_records` | boolean | ❌ | `false` | Whether to validate the schema of the incoming streams |
+| `overwrite_if_no_pk` | boolean | ❌ | `false` | When True, truncates the target table before inserting records if no primary keys are defined in the stream |
 
 ### Example Meltano YAML Configuration
 
@@ -52,6 +53,7 @@ plugins:
         max_batch_size: 10000 # Optional (default 10000)
         add_record_metadata: true # Optional
         auto_cast_timestamps: true # Optional
+        overwrite_if_no_pk: true # Optional (default false)
         partition_fields: {"my_stream": [{"column_name": "created_at", "type": "timestamp", "granularity": ["year", "month"]}]} # Optional
 ```
 

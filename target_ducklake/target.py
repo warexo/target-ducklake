@@ -130,12 +130,9 @@ class Targetducklake(Target):
         ),
         th.Property(
             "flatten_max_level",
-            th.CustomType({
-                "oneOf": [
-                    {"type": "string"},
-                    {"type": "integer", "minimum": 0}
-                ]
-            }),
+            th.CustomType(
+                {"oneOf": [{"type": "string"}, {"type": "integer", "minimum": 0}]}
+            ),
             default=0,
             title="Flattening Max Level",
             description="Maximum depth for flattening nested fields. Set to 0 to disable flattening.",
@@ -229,6 +226,13 @@ class Targetducklake(Target):
             default=False,
             title="Validate Records",
             description="Whether to validate the schema of the incoming streams.",
+        ),
+        th.Property(
+            "overwrite_if_no_pk",
+            th.BooleanType(),
+            default=False,
+            title="Overwrite If No Primary Key",
+            description="When True, truncates the target table before inserting records if no primary keys are defined in the stream.",
         ),
     ).to_dict()
 
