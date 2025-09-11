@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import ast
 import logging
 
 from singer_sdk import typing as th
@@ -26,7 +26,7 @@ class Targetducklake(Target):
         # Kubernetes pods only support string values for env vars (at least in GCP)
         if "partition_fields" in config and isinstance(config["partition_fields"], str):
             partition_fields_str = config["partition_fields"]
-            parsed_partition_fields = json.loads(partition_fields_str)
+            parsed_partition_fields = ast.literal_eval(partition_fields_str)
             config["partition_fields"] = parsed_partition_fields
             logging.info(
                 f"Successfully parsed partition_fields from string to object: {parsed_partition_fields}"
