@@ -1,6 +1,6 @@
 [project]
 name = "target-ducklake"
-version = "0.0.1"
+version = "0.0.2"
 description = "Singer target for ducklake, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = [{ name = "Steven Wang", email = "steven@definite.app" }]
