@@ -92,23 +92,3 @@ def concat_tables(
     new_table = create_pyarrow_table(records, pyarrow_schema)
     return pa.concat_tables([pyarrow_table, new_table]) if pyarrow_table else new_table
 
-
-def write_parquet_file(
-    table: pa.Table,
-    path: str,
-    compression_method: str = "gzip",
-    basename_template: str | None = None,
-    partition_cols: list[str] | None = None,
-) -> None:
-    """Write a pyarrow table to a parquet file."""
-    pq.write_to_dataset(
-        table,
-        root_path=path,
-        compression=compression_method,
-        partition_cols=partition_cols or None,
-        use_threads=True,
-        # use_legacy_dataset=False,
-        basename_template=f"{basename_template}{EXTENSION_MAPPING[compression_method.lower()]}.parquet"
-        if basename_template
-        else None,
-    )
