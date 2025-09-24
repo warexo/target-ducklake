@@ -136,6 +136,13 @@ class Targetducklake(Target):
             ),
         ),
         th.Property(
+            "load_method",
+            th.StringType(allowed_values=["append", "merge", "overwrite"]),
+            default="merge",
+            title="Load Method",
+            description="Method to use for loading data into the target table: append, merge, or overwrite",
+        ),
+        th.Property(
             "flatten_max_level",
             th.CustomType(
                 {"oneOf": [{"type": "string"}, {"type": "integer", "minimum": 0}]}
@@ -251,7 +258,7 @@ class Targetducklake(Target):
                     "oneOf": [
                         {
                             "type": "string",
-                            "description": "String representation of overwrite if no primary key",
+                            "description": "String representation of overwrite if no primary key, overrides load_method.",
                         },
                         {"type": "boolean"},
                     ]
@@ -259,7 +266,7 @@ class Targetducklake(Target):
             ),
             default=False,
             title="Overwrite If No Primary Key",
-            description="When True, truncates the target table before inserting records if no primary keys are defined in the stream.",
+            description="When True, truncates the target table before inserting records if no primary keys are defined in the stream. Overrides load_method.",
         ),
     ).to_dict()
 
