@@ -74,23 +74,22 @@ class ducklakeSink(BatchSink):
             partition_fields.get(self.stream_name) if partition_fields else None
         )
 
-        # Log for type of data load (append or merge)
-        if self.key_properties:
+        self.load_method = self.config.get("load_method", "merge")
+
+        # Determine if table should be overwritten
+        if not self.key_properties and self.config.get("overwrite_if_no_pk", False):
             self.logger.info(
-                f"Key properties found for {self.stream_name}, {self.key_properties}, merging data"
+                f"Load method is overwrite for {self.stream_name}: no key properties and overwrite_if_no_pk is True"
+            )
+            self.should_overwrite_table = True
+        elif self.load_method == "overwrite":
+            self.logger.info(f"Load method is overwrite for {self.stream_name}")
+            self.should_overwrite_table = True
+        else:
+            self.logger.info(
+                f"Load method is {self.load_method} for {self.stream_name}"
             )
             self.should_overwrite_table = False
-        else:
-            if self.config.get("overwrite_if_no_pk", False):
-                self.logger.info(
-                    f"No key properties found for {self.stream_name} and overwrite_if_no_pk is True, overwriting table"
-                )
-                self.should_overwrite_table = True
-            else:
-                self.logger.info(
-                    f"No key properties found for {self.stream_name} and overwrite_if_no_pk is False, appending data"
-                )
-                self.should_overwrite_table = False
 
     @property
     def target_schema(self) -> str:
@@ -251,8 +250,13 @@ class ducklakeSink(BatchSink):
             self.target_schema, self.target_table
         )
 
-        # If no key properties, we simply append the data
-        if not self.key_properties:
+        # If no key properties, load method is append or overwrite, or table should be overwritten
+        # we simply insert the data. Table is already truncated in setup if load method is overwrite
+        if (
+            not self.key_properties
+            or self.load_method in ["append", "overwrite"]
+            or self.should_overwrite_table
+        ):
             self.connector.insert_into_table(
                 temp_file_path,
                 self.target_schema,
@@ -261,8 +265,8 @@ class ducklakeSink(BatchSink):
                 table_columns,
             )
 
-        # If key properties, we upsert the data
-        elif self.key_properties:
+        # If load method is merge, we merge the data
+        elif self.load_method == "merge":
             self.connector.merge_into_table(
                 temp_file_path,
                 self.target_schema,
