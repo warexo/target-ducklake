@@ -74,7 +74,12 @@ class ducklakeSink(BatchSink):
             partition_fields.get(self.stream_name) if partition_fields else None
         )
 
-        self.load_method = self.config.get("load_method", "merge")
+        if not self.config.get("load_method"):
+            self.logger.info(f"No load method provided for {self.stream_name}, using default merge")
+            self.load_method = "merge"
+        else:
+            self.logger.info(f"Load method {self.config.get('load_method')} provided for {self.stream_name}")
+            self.load_method = self.config.get("load_method")
 
         # Determine if table should be overwritten
         if not self.key_properties and self.config.get("overwrite_if_no_pk", False):
