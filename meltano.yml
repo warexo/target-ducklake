@@ -123,7 +123,6 @@ plugins:
       kind: string
       label: Load Method
       description: Method to use for loading data into the target table: append, merge, or overwrite
-      default: merge
       options:
         - append
         - merge

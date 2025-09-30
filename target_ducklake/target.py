@@ -138,7 +138,6 @@ class Targetducklake(Target):
         th.Property(
             "load_method",
             th.StringType(allowed_values=["append", "merge", "overwrite"]),
-            default="merge",
             title="Load Method",
             description="Method to use for loading data into the target table: append, merge, or overwrite",
         ),
