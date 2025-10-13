@@ -17,6 +17,8 @@ TIMESTAMP_COLUMN_NAMES = {
     "last_modified",
     "updatedat",
     "createdat",
+    "created_time",
+    "updated_time"
 }
 
 

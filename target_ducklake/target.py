@@ -234,6 +234,15 @@ class Targetducklake(Target):
             ),
         ),
         th.Property(
+            "convert_tz_to_utc",
+            th.BooleanType(),
+            default=False,
+            title="Convert TZ to UTC",
+            description=(
+                "When True, automatically converts timezone of timestamp-like fields to UTC."
+            ),
+        ),
+        th.Property(
             "validate_records",
             th.CustomType(
                 {
