@@ -31,6 +31,7 @@ Supports append, merge, and overwrite load methods (default is merge). The load 
 | `max_batch_size` | integer | ❌ | `10000` | Maximum number of records to process in a single batch |
 | `partition_fields` | object | ❌ | - | Object mapping stream names to arrays of partition column definitions. Each stream key maps directly to an array of column definitions |
 | `auto_cast_timestamps` | boolean | ❌ | `false` | When True, automatically attempts to cast timestamp-like fields to timestamp types in ducklake |
+| `convert_tz_to_utc` | boolean | ❌ | `false` | When True, automatically converts timezone of timestamp-like fields to UTC |
 | `validate_records` | boolean | ❌ | `false` | Whether to validate the schema of the incoming streams |
 | `overwrite_if_no_pk` | boolean | ❌ | `false` | When True, truncates the target table before inserting records if no primary keys are defined in the stream. Overrides load_method. |
 
