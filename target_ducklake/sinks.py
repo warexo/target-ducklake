@@ -36,6 +36,7 @@ class ducklakeSink(BatchSink):
         super().__init__(target, stream_name, schema, key_properties)
         self.temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
         self.files_saved = 0
+        self.convert_tz_to_utc = self.config.get("convert_tz_to_utc", False)
 
         # NOTE: we probably don't need all this logging, but useful for debugging while target is in development
         # Log original schema for debugging
@@ -210,6 +211,8 @@ class ducklakeSink(BatchSink):
             context.get("records", []),
             pyarrow_df,
             self.pyarrow_schema,  # type: ignore
+            self.flatten_schema,
+            self.convert_tz_to_utc,
         )
 
         # Drop duplicates based on key properties if they exist in temp file

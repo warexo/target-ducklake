@@ -134,5 +134,11 @@ plugins:
       description: When True, truncates the target table before inserting records if no primary keys are defined in the stream. Overrides load_method.
       default: false
 
+    - name: convert_tz_to_utc
+      kind: boolean
+      label: Convert TZ to UTC
+      description: When True, automatically converts timezone of timestamp-like fields to UTC.
+      default: false
+
     settings_group_validation:
     - [catalog_url, data_path]
