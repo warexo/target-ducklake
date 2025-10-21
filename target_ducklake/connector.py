@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 import duckdb
 from singer_sdk.connectors.sql import JSONSchemaToSQL
+from singer_sdk.connectors import SQLConnector
 from sqlalchemy.types import BIGINT, DECIMAL, INTEGER, JSON
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class JSONSchemaToDuckLake(JSONSchemaToSQL):
         return DECIMAL(max_precision, default_scale)
 
 
-class DuckLakeConnector:
+class DuckLakeConnector(SQLConnector):
     """Handles DuckLake database connections and setup."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -75,7 +76,7 @@ class DuckLakeConnector:
         Raises:
             DuckLakeConnectorError: If required configuration is missing
         """
-        self.config = config
+        super().__init__(config=config)
         self._validate_config()
 
         self.catalog_url = config.get("catalog_url")
@@ -89,6 +90,8 @@ class DuckLakeConnector:
         self._connection: duckdb.DuckDBPyConnection | None = None
         self.catalog_name = "ducklake_catalog"
         self.meta_schema = config.get("meta_schema")
+
+        # logger.info(f"DuckLakeConnector initialized with config: {self.config}")
 
     def _validate_config(self) -> None:
         """Validate required configuration parameters."""
@@ -139,6 +142,7 @@ class DuckLakeConnector:
         """Get or create the DuckDB connection."""
         if self._connection is None:
             self._connection = self._create_connection()
+            logger.info("DuckDB connection created and connected to DuckLake catalog")
         return self._connection
 
     def _create_connection(self) -> duckdb.DuckDBPyConnection:
@@ -457,10 +461,10 @@ class DuckLakeConnector:
             )
         return ducklake_schema
 
-    def close(self, stream_name: str) -> None:
+    def close(self) -> None:
         """Close the database connection."""
         if self._connection is not None:
-            logger.info(f"Closing DuckDB connection for stream {stream_name}")
+            logger.info("Closing DuckDB connection")
             self._connection.close()
             self._connection = None
 

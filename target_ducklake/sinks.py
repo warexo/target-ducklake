@@ -13,8 +13,7 @@ import polars as pl
 import pyarrow.parquet as pq
 from singer_sdk import Target
 
-# from singer_sdk.connectors import SQLConnector
-from singer_sdk.sinks import BatchSink
+from singer_sdk.sinks import SQLSink
 
 from target_ducklake.connector import DuckLakeConnector
 from target_ducklake.flatten import flatten_record, flatten_schema
@@ -24,8 +23,10 @@ from target_ducklake.parquet_utils import (
 )
 
 
-class ducklakeSink(BatchSink):
+class ducklakeSink(SQLSink):
     """ducklake target sink class."""
+
+    connector_class = DuckLakeConnector
 
     def __init__(
         self,
@@ -33,8 +34,12 @@ class ducklakeSink(BatchSink):
         stream_name: str,
         schema: dict,
         key_properties: Sequence[str] | None,
+        connector: DuckLakeConnector | None = None,
     ) -> None:
-        super().__init__(target, stream_name, schema, key_properties)
+        super().__init__(
+            target, stream_name, schema, key_properties, connector=connector
+        )
+
         self.base_temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
         self.temp_file_dir = os.path.join(
             self.base_temp_file_dir, f"{self.stream_name}_{uuid.uuid4()}"
@@ -45,9 +50,6 @@ class ducklakeSink(BatchSink):
         # NOTE: we probably don't need all this logging, but useful for debugging while target is in development
         # Log original schema for debugging
         self.logger.info(f"Original schema for stream '{stream_name}': {self.schema}")
-
-        # Use the connector for database operations
-        self.connector = DuckLakeConnector(dict(self.config))
 
         # Create pyarrow and Ducklake schemas
         self.flatten_max_level = self.config.get("flatten_max_level", 0)
@@ -80,11 +82,15 @@ class ducklakeSink(BatchSink):
         )
 
         if not self.config.get("load_method"):
-            self.logger.info(f"No load method provided for {self.stream_name}, using default merge")
+            self.logger.info(
+                f"No load method provided for {self.stream_name}, using default merge"
+            )
             self.load_method = "merge"
         else:
-            self.logger.info(f"Load method {self.config.get('load_method')} provided for {self.stream_name}")
-            self.load_method = self.config.get("load_method")
+            self.logger.info(
+                f"Load method {self.config.get('load_method')} provided for {self.stream_name}"
+            )
+            self.load_method = str(self.config.get("load_method"))
 
         # Determine if table should be overwritten
         if not self.key_properties and self.config.get("overwrite_if_no_pk", False):
@@ -293,11 +299,7 @@ class ducklakeSink(BatchSink):
 
     def clean_up(self) -> None:
         """Perform per-stream cleanup."""
-        self.logger.info(f"Cleaning up resources for stream {self.stream_name}")
         super().clean_up()
-        # Close the DB connection for this stream's sink
-        if hasattr(self, "connector"):
-            self.connector.close(self.stream_name)
         # Remove this stream's dedicated temp directory
         if hasattr(self, "temp_file_dir"):
             self.logger.info(
@@ -310,14 +312,6 @@ class ducklakeSink(BatchSink):
                 self.logger.warning(
                     f"Non-fatal error during temp directory cleanup for {self.stream_name}: {e}"
                 )
-
-    # def __del__(self) -> None:
-    #     """Cleanup when sink is destroyed."""
-    #     try:
-    #         self.clean_up()
-    #     except Exception:
-    #         # Avoid raising in GC context
-    #         pass
 
 
 def stream_name_to_dict(stream_name, separator="-"):
