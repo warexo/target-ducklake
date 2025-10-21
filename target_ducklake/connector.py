@@ -457,10 +457,10 @@ class DuckLakeConnector:
             )
         return ducklake_schema
 
-    def close(self) -> None:
+    def close(self, stream_name: str) -> None:
         """Close the database connection."""
         if self._connection is not None:
-            logger.info("Closing DuckDB connection")
+            logger.info(f"Closing DuckDB connection for stream {stream_name}")
             self._connection.close()
             self._connection = None
 
