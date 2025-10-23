@@ -142,7 +142,7 @@ class DuckLakeConnector(SQLConnector):
         """Get or create the DuckDB connection."""
         if self._connection is None:
             self._connection = self._create_connection()
-            logger.info("DuckDB connection created and connected to DuckLake catalog")
+            logger.info("DuckDB and DuckLake catalog connection created.")
         return self._connection
 
     def _create_connection(self) -> duckdb.DuckDBPyConnection:
