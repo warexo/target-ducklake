@@ -233,7 +233,7 @@ class DuckLakeConnector(SQLConnector):
         """
         try:
             logger.debug(f"Executing query: {query}")
-            return self.connection.execute(query, parameters)
+            return self.connection.cursor().execute(query, parameters)
         except Exception as e:
             raise DuckLakeConnectorError(f"Query {query} failed with error: {e}") from e
 
