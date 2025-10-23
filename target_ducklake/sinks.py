@@ -7,13 +7,13 @@ import shutil
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
+import uuid
 
 import polars as pl
 import pyarrow.parquet as pq
 from singer_sdk import Target
 
-# from singer_sdk.connectors import SQLConnector
-from singer_sdk.sinks import BatchSink
+from singer_sdk.sinks import SQLSink
 
 from target_ducklake.connector import DuckLakeConnector
 from target_ducklake.flatten import flatten_record, flatten_schema
@@ -23,8 +23,10 @@ from target_ducklake.parquet_utils import (
 )
 
 
-class ducklakeSink(BatchSink):
+class ducklakeSink(SQLSink):
     """ducklake target sink class."""
+
+    connector_class = DuckLakeConnector
 
     def __init__(
         self,
@@ -32,18 +34,22 @@ class ducklakeSink(BatchSink):
         stream_name: str,
         schema: dict,
         key_properties: Sequence[str] | None,
+        connector: DuckLakeConnector | None = None,
     ) -> None:
-        super().__init__(target, stream_name, schema, key_properties)
-        self.temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
+        super().__init__(
+            target, stream_name, schema, key_properties, connector=connector
+        )
+
+        self.base_temp_file_dir = self.config.get("temp_file_dir", "temp_files/")
+        self.temp_file_dir = os.path.join(
+            self.base_temp_file_dir, f"{self.stream_name}_{uuid.uuid4()}"
+        )
         self.files_saved = 0
         self.convert_tz_to_utc = self.config.get("convert_tz_to_utc", False)
 
         # NOTE: we probably don't need all this logging, but useful for debugging while target is in development
         # Log original schema for debugging
         self.logger.info(f"Original schema for stream '{stream_name}': {self.schema}")
-
-        # Use the connector for database operations
-        self.connector = DuckLakeConnector(dict(self.config))
 
         # Create pyarrow and Ducklake schemas
         self.flatten_max_level = self.config.get("flatten_max_level", 0)
@@ -76,11 +82,15 @@ class ducklakeSink(BatchSink):
         )
 
         if not self.config.get("load_method"):
-            self.logger.info(f"No load method provided for {self.stream_name}, using default merge")
+            self.logger.info(
+                f"No load method provided for {self.stream_name}, using default merge"
+            )
             self.load_method = "merge"
         else:
-            self.logger.info(f"Load method {self.config.get('load_method')} provided for {self.stream_name}")
-            self.load_method = self.config.get("load_method")
+            self.logger.info(
+                f"Load method {self.config.get('load_method')} provided for {self.stream_name}"
+            )
+            self.load_method = str(self.config.get("load_method"))
 
         # Determine if table should be overwritten
         if not self.key_properties and self.config.get("overwrite_if_no_pk", False):
@@ -287,15 +297,21 @@ class ducklakeSink(BatchSink):
         # delete file after insert
         os.remove(temp_file_path)
 
-    def __del__(self) -> None:
-        """Cleanup when sink is destroyed."""
-        if hasattr(self, "connector"):
-            self.connector.close()
-        # delete the temp file
+    def clean_up(self) -> None:
+        """Perform per-stream cleanup."""
+        super().clean_up()
+        # Remove this stream's dedicated temp directory
         if hasattr(self, "temp_file_dir"):
-            self.logger.info(f"Cleaning up temp file directory {self.temp_file_dir}")
-            if os.path.exists(self.temp_file_dir):
-                shutil.rmtree(self.temp_file_dir)
+            self.logger.info(
+                f"Cleaning up temp directory for stream {self.stream_name}: {self.temp_file_dir}"
+            )
+            try:
+                if os.path.exists(self.temp_file_dir):
+                    shutil.rmtree(self.temp_file_dir)
+            except Exception as e:
+                self.logger.warning(
+                    f"Non-fatal error during temp directory cleanup for {self.stream_name}: {e}"
+                )
 
 
 def stream_name_to_dict(stream_name, separator="-"):
