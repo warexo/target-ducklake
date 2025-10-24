@@ -189,7 +189,7 @@ class ducklakeSink(SQLSink):
             return pyarrow_df
 
         # Check that all key properties exist in the pyarrow table
-        available_columns = set(pyarrow_df.column_names)
+        available_columns = map(str.lower, set(pyarrow_df.column_names))
         for key_property in self.key_properties:
             if key_property not in available_columns:
                 raise ValueError(
